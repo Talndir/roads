@@ -1,8 +1,7 @@
 module Ruby
 
 import AE
-import Data.List
-import Data.String
+import public Tuple
 
 public export
 data RTuple : (k : Type) -> Type where
@@ -43,43 +42,5 @@ Functor RComb where
     map f (Loop q) = Loop (f q)
 
 public export
-data Tuple : Type where
-    W : Nat -> Tuple
-    T : List Tuple -> Tuple
-
-public export
-concatWith : Show a => String -> List a -> String
-concatWith _ [] = ""
-concatWith _ [x] = show x
-concatWith s (x :: xs) = show x ++ s ++ concatWith s xs
-
-public export
-Show Tuple where
-    show (W 0) = "V"
-    show (W x) = "." ++ show x
-    show (T xs) = "<" ++ concatWith ", " xs ++ ">"
-
-public export
-Typ : Type
-Typ = (Tuple, Tuple)
-
-public export
-data Block = Bloc Typ String
-
-public export
-Show Block where
-    show (Bloc (d, c) n) = padRight 10 ' ' n ++ padRight 30 ' ' (show d) ++ show c
-
-public export
-V : Tuple
-V = W 0
-
-public export
-genTuple : Nat -> Tuple
-genTuple 1 = V
-genTuple n = T (replicate n V)
-
-public export
 build : Nat -> Nat -> String -> Free f Block
-build a b s = Var $ Bloc (genTuple a, genTuple b) s where
-
+build a b s = Var $ Bloc (genTuple a, genTuple b) s
