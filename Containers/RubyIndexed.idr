@@ -1,18 +1,16 @@
-module RubyIndexed
+module Containers.RubyIndexed
 
 import AE
 import State
-import Indexed
-import IAE
-import Tuple
+import public Indexed
+import public IAE
+import public Tuple
 import Data.String
 
 -- Ruby
 
 data RComb : (k : Typ -> Type) -> Typ -> Type where
     Seq : {a,b,c : Tuple} -> k (a, b) -> k (b, c) -> RComb k (a, c)
-    SeqL : {a,b,c,d : Tuple} -> k (a, b) -> k (T [b, c], d) -> RComb k (T [a, c], d)
-    SeqR : {a,b,c,d : Tuple} -> k (a, T [b, c]) -> k (c, d) -> RComb k (a, T [b, d])
     Par : {a,b,c,d : Tuple} -> k (a, b) -> k (c, d) -> RComb k (T [a, c], T [b, d])
     Inv : {a,b : Tuple} -> k (a, b) -> RComb k (b, a)
     Bes : {a,b,c,d,e,f,v : Tuple} -> k (T [a, b], T [d, v]) -> k (T [v, c], T [e, f]) -> RComb k (T [a, T [b, c]], T [T [d, e], f])
@@ -21,8 +19,6 @@ data RComb : (k : Typ -> Type) -> Typ -> Type where
 
 IFunctor RComb where
     imap f (Seq q r) = Seq (f q) (f r)
-    imap f (SeqL q r) = SeqL (f q) (f r)
-    imap f (SeqR q r) = SeqR (f q) (f r)
     imap f (Par q r) = Par (f q) (f r)
     imap f (Inv q) = Inv (f q)
     imap f (Bes q r) = Bes (f q) (f r)
@@ -36,14 +32,6 @@ Ruby = IFree RComb (Const Typ String)
 infixl 3 <:>
 (<:>) : {a,b,c : Tuple} -> Ruby (a, b) -> Ruby (b, c) -> Ruby (a, c)
 (q <:> r) = Do (Seq q r)
-
-infixl 3 <<:>
-(<<:>) : {a,b,c,d : Tuple} -> Ruby (a, b) -> Ruby (T [b, c], d) -> Ruby (T [a, c], d)
-(q <<:> r) = Do (SeqL q r)
-
-infixl 3 <:>>
-(<:>>) : {a,b,c,d : Tuple} -> Ruby (a, T [b, c]) -> Ruby (c, d) -> Ruby (a, T [b, d])
-(q <:>> r) = Do (SeqR q r)
 
 infixl 3 <|>
 (<|>) : {a,b,c,d : Tuple} -> Ruby (a, b) -> Ruby (c, d) -> Ruby (T [a, c], T [b, d])
@@ -119,9 +107,9 @@ pq : Ruby (T [T [W, W], W], T [T [W, W], W])
 pq = repeat 4 pqcell
 
 -- RBS
-
+{-
 SRBS : Typ -> Type
-SRBS (a, b) = (x : shape a Nat) -> (y : shape b Nat) -> Free (State Nat) (Ruby (fst x, fst y))
+SRBS (a, b) = (x : shape a Nat) -> Free (State Nat) (y : shape b Nat ** Ruby (fst x, fst y))
 
 inc : Num s => Free (State s) s
 inc = Prelude.do
@@ -149,6 +137,75 @@ comb Refl Refl = Refl
 
 Rx : Typ -> Type
 Rx x = Free (State Nat) (Ruby x)
+
+err1x : (x : Rose a) -> (xs : Vect n (Rose a))
+     -> (v : shape (T [x, T xs]) b)
+     -> (ys : (shape x b, Dv xs b) ** fst v = T [fst (fst ys), T (extract (snd ys))])
+err1x x xs (T [r, T rs] ** pf) =
+    let ([x', t] ** px) = extractT'' [x, T xs] (T  [r, T rs] ** pf) in
+    let (xs' ** pxs) = extractT'' xs t in
+    ((x', xs') ** rewrite sym pxs in px)
+
+errx1 : (xs : Vect n (Rose a)) -> (x : Rose a)
+     -> (v : shape (T [T xs, x]) b)
+     -> (ys : (Dv xs b, shape x b) ** fst v = T [T (extract (fst ys)), fst (snd ys)])
+errx1 xs x (T [T rs, r] ** pf) =
+    let ([t, x'] ** px) = extractT'' [T xs, x] (T  [T rs, r] ** pf) in
+    let (xs' ** pxs) = extractT'' xs t in
+    ((xs', x') ** rewrite sym pxs in px)
+
+consEq : Equal {a=a} {b=b} x y -> Equal {a=Vect n a} {b=Vect n b} xs ys -> Equal {a=Vect (S n) a} {b=Vect (S n) b} (x::xs) (y::ys)
+consEq Refl Refl = Refl
+
+runrun : {xs : Vect n (Rose Nat)} -> (vs : Dv xs Nat)
+      -> (ys : Vect m (Rose Nat))
+      -> SRBS (T xs, T ys)
+      -> Free (State Nat) (ws : Dv ys Nat ** Ruby (T (extract vs), T (extract ws)))
+runrun vs ys q = do
+    let (z ** pz) = makeT vs
+    (qy ** q') <- q z
+    let (ws ** pw) = extractT'' ys qy
+    let q'' = replace {p=Ruby} (comb pz pw) q'
+    pure (ws ** q'')
+
+make1T : {x : Rose a} -> (v : shape x b)
+      -> {xs : Vect n (Rose a)} -> (vs : Dv xs b)
+      -> (ys : shape (T [x, T xs]) b ** fst ys = T [fst v, T (extract vs)])
+make1T {x} v {xs} vs = let (y ** py) = makeT vs in let (z ** pz) = makeT {xs=[x, T xs]} [v, y] in (z ** rewrite sym py in pz)
+
+makeT1 : {xs : Vect n (Rose a)} -> (vs : Dv xs b)
+      -> {x : Rose a} -> (v : shape x b)
+      -> (ys : shape (T [T xs, x]) b ** fst ys = T [T (extract vs), fst v])
+makeT1 {xs} vs {x} v = let (y ** py) = makeT vs in let (z ** pz) = makeT {xs=[T xs, x]} [y, v] in (z ** rewrite sym py in pz)
+
+alg_names : RComb SRBS x -> SRBS x
+alg_names (Seq q r) = \x => do
+    (qy ** q') <- q x
+    (ry ** r') <- r qy
+    pure (ry ** Do (Seq q' r'))
+alg_names (Par {a,c} q r) = \x => do
+    let ([a', c'] ** px) = extractT'' [a, c] x
+    (qy ** q') <- q a'
+    (ry ** r') <- r c'
+    let (y ** py) = makeT [qy, ry]
+    pure (y ** the (Ruby (x.fst, y.fst)) (rewrite py in rewrite px in Do (Par q' r')))
+alg_names (Inv {a,b} q) = \x => do
+    --(q' ** y) <- q x
+    pure ?w--$ Do (Inv q')
+alg_names (Bes {a,b,c,d,e,f,v} q r) = \x => do
+    let ((a', [b', c']) ** px) = err1x a [b, c] x
+    ([d', v'] ** q') <- runrun [a', b'] [d, v] q
+    ([e', f'] ** r') <- runrun [v', c'] [e, f] r
+    let (y ** py) = makeT1 [d', e'] f'
+    pure (y ** the (Ruby (fst x, fst y)) (rewrite py in rewrite px in Do (Bes q' r')))
+alg_names (Bel {a,b,c,d,e,f,v} q r) = \x => do
+    let (([a', b'], c') ** px) = errx1 [a, b] c x
+    ([v', f'] ** r') <- runrun [b', c'] [v, f] r
+    ([d', e'] ** q') <- runrun [a', v'] [d, e] q
+    let (y ** py) = make1T d' [e', f']
+    pure (y ** the (Ruby (fst x, fst y)) (rewrite py in rewrite px in Do (Bel q' r')))
+alg_names _ = ?undef
+
 
 welp : {xs : Vect n (Rose Nat)} -> {ys : Vect m (Rose Nat)}
     -> SRBS (T xs, T ys) -> (x : Dv xs Nat) -> (y : Dv ys Nat)
@@ -181,6 +238,8 @@ errx1 xs x (T [T rs, r] ** pf) =
     let (xs' ** pxs) = extractT'' xs t in
     ((xs', x') ** rewrite sym pxs in px)
 
+
+
 gen_names : Const Typ String x -> SRBS x
 gen_names (s, ((a, b) ** pf)) = rewrite sym pf in \x => \y => pure (Gen s)
 
@@ -190,18 +249,6 @@ alg_names (Seq {a,b,c} q r) = \x => \y => do
     q' <- q x b'
     r' <- r b' y
     pure $ Do (Seq q' r')
-alg_names (SeqL {a,b,c,d} q r) = \x => \y => do
-    let ([a', c'] ** px) = extractT'' [a, c] x
-    b' <- new b
-    q' <- q a' b'
-    r' <- welpx1 r [b', c'] y
-    pure $ Do (rewrite px in SeqL q' r')
-alg_names (SeqR {a,b,c,d} q r) = \x => \y => do
-    let ([b', d'] ** py) = extractT'' [b, d] y
-    c' <- new c
-    q' <- welp1x q x [b', c']
-    r' <- r c' d'
-    pure $ Do (rewrite py in SeqR q' r')
 alg_names (Par {a,b,c,d} q r) = \x => \y => do
     let ([a', c'] ** pq) = extractT'' [a, c] x
     let ([b', d'] ** pr) = extractT'' [b, d] y
@@ -230,6 +277,7 @@ alg_names (Loop {a,b,c} q) = \x => \y => do
     q' <- welp q [x, b'] [b', y]
     pure $ Do (Loop q')
 
+
 New : (f : Typ -> Type) -> Typ -> Type
 New f (a, b) = (y : shape2 (a, b) Nat ** f (fst y))
 
@@ -254,8 +302,6 @@ make2 (qs, _) (rs, _) x y = (qs ++ rs, ((x, y) ** Refl))
 
 alg_rbs : RComb TRBS x -> TRBS x
 alg_rbs (Seq {a,c} q r) = make2 q r a c
-alg_rbs (SeqL {a,c,d} q r) = make2 q r (T [a, c]) d
-alg_rbs (SeqR {a,b,d} q r) = make2 q r a (T [b, d])
 alg_rbs (Par {a,b,c,d} q r) = make2 q r (T [a, c]) (T [b, d])
 alg_rbs (Inv {a,b} (qs, _)) = (qs, ((b, a) ** Refl))
 alg_rbs (Bes {a,b,c,d,e,f} q r) = make2 q r (T [a, T [b, c]]) (T [T [d, e], f])
@@ -265,8 +311,8 @@ alg_rbs (Loop {a,c} (qs, _)) = (qs, ((a, c) ** Refl))
 make_rbs : {x : Typ} -> Ruby x -> TRBS x
 make_rbs = fold gen_rbs alg_rbs
 
-compile : {x : Typ} -> Ruby x -> New TRBS x
-compile {x=(a, b)} r = let (y ** r') = make_names r in (y ** make_rbs r')
+--compile : {x : Typ} -> Ruby x -> New TRBS x
+--compile {x=(a, b)} r = let (y ** r') = make_names r in (y ** make_rbs r')
 
 Show (TRBS x) where
     show (bs, ((d, c) ** _)) = title ++ line ++ blocks ++ line ++ dirs ++ wiring ++ inputs where
@@ -277,3 +323,4 @@ Show (TRBS x) where
         dirs = "Directions - ? ~ ?\n"
         wiring = "Wiring - " ++ show d ++ " ~ " ++ show c ++ "\n"
         inputs = "Inputs - ?"
+-}
