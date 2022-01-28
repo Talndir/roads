@@ -1,1 +1,13 @@
 /build
+*.cut
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.lox
+*.pdf
+*.ptb
+*.synctex.gz
+*.lox
