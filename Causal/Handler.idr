@@ -12,14 +12,14 @@ drop' : (n : Nat) -> Lazy (Vect (n + m) a) -> Lazy (Vect m a)
 drop' 0 xs = xs
 drop' (S k) (x :: xs) = drop k xs
 
-tst : Interp a (p, q) -> Interp a (compl q, r) -> Interp a (p, r)
-tst (Inter {dl=p,      dr=q,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
-    (Inter {dl=compl q,dr=r,nl=(rnl,rml),nr=(rnr,rmr),pfl=rpfl,pfr=rpfr} rs) =
-        Inter {dl=p,   dr=r,nl=(qnl,qml),nr=(rnr,rmr)} ss where
+handleSeq : {pf : Compl q q'} -> Interp a (p, q) -> Interp a (q', r) -> Interp a (p, r)
+handleSeq {pf} (Inter {dl=p, dr=q,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
+    (Inter {dl=q',dr=r,nl=(rnl,rml),nr=(rnr,rmr),pfl=rpfl,pfr=rpfr} rs) =
+        Inter {dl=p,dr=r,nl=(qnl,qml),nr=(rnr,rmr)} ss where
             eq1 : qnr = rml
-            eq1 = fst (makepf' qpfr rpfl)
+            eq1 = fst (complSwap pf qpfr rpfl)
             eq2 : rnl = qmr
-            eq2 = sym (snd (makepf' qpfr rpfl))
+            eq2 = snd (complSwap pf qpfr rpfl)
             rwrml : Vect rml a -> Vect qnr a
             rwrml x = rewrite eq1 in x
             rwqmr : Vect qmr a -> Vect rnl a
@@ -37,8 +37,8 @@ tst (Inter {dl=p,      dr=q,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
                     vrml = take' rml (rs (rwqmr vqmr ++ vrnr))
                     vrmr = drop' rml (rs (rwqmr vqmr ++ vrnr))
 
-tst' : Interp a (p1, q1) -> Interp a (p2, q2) -> Interp a (T [p1, p2], T [q1, q2])
-tst' (Inter {dl=p1,dr=q1,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
+handlePar : Interp a (p1, q1) -> Interp a (p2, q2) -> Interp a (T [p1, p2], T [q1, q2])
+handlePar (Inter {dl=p1,dr=q1,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
      (Inter {dl=p2,dr=q2,nl=(rnl,rml),nr=(rnr,rmr),pfl=rpfl,pfr=rpfr} rs) =
         Inter {dl=T [p1,p2],dr=T [q1,q2],nl=(qnl+rnl,qml+rml),nr=(qnr+rnr,qmr+rmr),pfl=pfl,pfr=pfr} ss where
             pfl : (qnl + rnl, qml + rml) = fst (make (T [p1, p2]))
@@ -53,8 +53,8 @@ tst' (Inter {dl=p1,dr=q1,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
                 let (vrml, vrmr) = splitAt rml (rs (vrnl ++ vrnr)) in
                 (vqml ++ vrml) ++ (vqmr ++ vrmr)
 
-tst'' : Interp a (p, q) -> Interp a (q, p)
-tst'' (Inter {dl=p,dr=q,nl=(nl,ml),nr=(nr,mr),pfl=pfl,pfr=pfr} qs) =
+handleInv : Interp a (p, q) -> Interp a (q, p)
+handleInv (Inter {dl=p,dr=q,nl=(nl,ml),nr=(nr,mr),pfl=pfl,pfr=pfr} qs) =
     Inter {dl=q,dr=p,nl=(nr,mr),nr=(nl,ml),pfl=pfr,pfr=pfl} ws where
     ws : Vect (nr + nl) a -> Vect (mr + ml) a
     ws vs =
@@ -63,9 +63,9 @@ tst'' (Inter {dl=p,dr=q,nl=(nl,ml),nr=(nr,mr),pfl=pfl,pfr=pfr} qs) =
         k ++ j
 
 alg : RComb (Interp a) x -> Interp a x
-alg (Seq q r) = tst q r
-alg (Par q r) = tst' q r
-alg (Inv q) = tst'' q
+alg (Seq {pf} q r) = handleSeq {pf=pf} q r
+alg (Par q r) = handlePar q r
+alg (Inv q) = handleInv q
 
 public export
 handle : {a : Type} -> IFree RComb (Interp a) x -> Interp a x

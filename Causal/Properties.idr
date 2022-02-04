@@ -4,6 +4,7 @@ import Causal.Ruby
 import Causal.Utils
 import Data.Nat
 
+{-
 export
 makepf' : {x : DShp} -> {n,m,n',m' : Nat}
        -> (n, m) = fst (make x) -> (n', m') = fst (make (compl x))
@@ -23,6 +24,7 @@ makepf' {x=T (x::xs)} pf pf' with (make x) proof mx
 makepf' {x=V In,n=1,m=0,n'=0,m'=1} pf pf' = (Refl, Refl)
 makepf' {x=V Out,n=0,m=1,n'=1,m'=0} pf pf' = (Refl, Refl)
 makepf' {x=T [],n=0,m=0,n'=0,m'=0} pf pf' = (Refl, Refl)
+-}
 
 export
 makepf2 : {x, y : DShp} -> {nx,mx,ny,my : Nat}
@@ -68,6 +70,7 @@ isoutpf (TIs {xs=x::xs} (h::hs)) pf with (make x) proof mkx
         let (Refl) = isoutpf (TIs hs) (simp mkxs) in
         let (Refl, _) = splitPf pf in Refl
 
+{-
 export
 complpf : Compl x y -> y = compl x
 complpf VCompl1 = Refl
@@ -75,6 +78,7 @@ complpf VCompl2 = Refl
 complpf (TCompl {xs=(x::xs),ys=(y::ys)} (h::hs)) =
     let (pf, pfs) = (complpf h, complpf (TCompl hs)) in cong T (addEq pf (underT pfs))
 complpf (TCompl {xs=[],ys=[]} []) = Refl
+-}
 
 export
 complSwap : Compl x y -> (nx, mx) = fst (make x) -> (ny, my) = fst (make y) -> (nx = my, ny = mx)

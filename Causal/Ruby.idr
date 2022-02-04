@@ -57,7 +57,7 @@ Ruby a x = IFree RComb (Interp a) x
 
 infixl 3 <:>
 public export
-(<:>) : Ruby t (a, b) -> Ruby t (compl b, c) -> Ruby t (a, c)
+(<:>) : {auto pf : Compl b b'} -> Ruby t (a, b) -> Ruby t (b', c) -> Ruby t (a, c)
 (q <:> r) = Do (Seq q r)
 
 infixl 3 <|>
