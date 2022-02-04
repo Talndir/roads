@@ -9,16 +9,13 @@ import Data.String
 RBS : Type
 RBS = (Typ, List Block)
 
-Ruby : Type
-Ruby = Free RComb Block
-
 inc : (Num s, (State s) -< f) => Free f s
 inc = do
     v <- get
     put (v + 1)
     pure (v + 1)
 
-seqM : Monad m => (a -> m b) -> List a -> m (List b)
+seqM : Monad m => (a -> m b) -> Vect n a -> m (Vect n b)
 seqM f Nil = pure Nil
 seqM f (x :: xs) = do
     y <- f x
@@ -26,9 +23,9 @@ seqM f (x :: xs) = do
     pure (y :: ys)
 
 trav : Tuple -> Free (State Nat) Tuple
-trav (W _) = do
+trav (V _) = do
     v <- inc
-    pure (W v)
+    pure (V v)
 trav (T xs) = do
     ys <- seqM trav xs
     pure (T ys)
@@ -52,8 +49,6 @@ run2 x y con = do
 
 alg_name : Alg RComb (Free (State Nat) Ruby)
 alg_name (Seq q r) = run2 q r Seq
-alg_name (SeqL q r) = run2 q r SeqL
-alg_name (SeqR q r) = run2 q r SeqR
 alg_name (Par q r) = run2 q r Par
 alg_name (Inv q) = run1 q Inv
 alg_name (Bes q r) = run2 q r Bes
@@ -68,22 +63,19 @@ gen_rbs : Gen Block RBS
 gen_rbs (Bloc (d, c) n) = ((d, c), [Bloc (d, c) n])
 
 wire : Nat -> Nat -> Block
-wire x y = Bloc (W x, W y) "id"
+wire x y = Bloc (V x, V y) "id"
 
 errorBlock : List Block
-errorBlock = [Bloc (W 0, W 0) "ERROR"]
+errorBlock = [Bloc (V 0, V 0) "ERROR"]
 
 wires : Tuple -> Tuple -> List Block
-wires (W x) (W y) = [wire x y]
-wires (T xs) (T ys) = foldl (++) Nil $ zipWith wires xs ys
+wires (V x) (V y) = [wire x y]
+wires (T (x :: xs)) (T (y :: ys)) = wires x y ++ wires (T xs) (T ys)
+wires (T []) (T []) = []
 wires _ _ = errorBlock
 
 alg_rbs : Alg RComb RBS
 alg_rbs (Seq ((a, b), q) ((c, d), r)) = ((a, d), q ++ r ++ wires b c)
-alg_rbs (SeqL ((a, b), q) ((T [c, d], e), r))
-    = ((T [a, d], e), q ++ r ++ wires b c)
-alg_rbs (SeqR ((a, T [b, c]), q) ((d, e), r))
-    = ((a, T [b, e]), q ++ r ++ wires c d)
 alg_rbs (Par ((a, b), q) ((c, d), r)) = ((T [a, c], T [b, d]), q ++ r)
 alg_rbs (Inv ((a, b), q)) = ((b, a), q)
 alg_rbs (Bes ((T [a, b], T [c, d]), q) ((T [e, f], T [g, h]), r))
@@ -91,7 +83,7 @@ alg_rbs (Bes ((T [a, b], T [c, d]), q) ((T [e, f], T [g, h]), r))
 alg_rbs (Bel ((T [a, b], T [c, d]), q) ((T [e, f], T [g, h]), r))
     = ((T [T [a, e], f], T [c, T [d, h]]), q ++ r ++ wires b g)
 alg_rbs (Loop ((T [a, b], T [c, d]), q)) = ((a, d), q ++ wires b c)
-alg_rbs _ = ((W 0, W 0), errorBlock)
+alg_rbs _ = ((V 0, V 0), errorBlock)
 
 public export
 handle_rbs : Ruby -> RBS
@@ -127,14 +119,14 @@ removeId ((d, c), bs) = remove' ((d, c), sortId bs) where
     sortId (x :: xs) = sortId xs ++ [x]
     sortId Nil = Nil
     mapTuple : (Nat -> Nat) -> Tuple -> Tuple
-    mapTuple f (W x) = W (f x)
+    mapTuple f (V x) = V (f x)
     mapTuple f (T xs) = T (map (mapTuple f) xs)
     alter : Nat -> Nat -> Tuple -> Tuple
     alter x y = mapTuple (\v => if v == y then x else v)
     alter' : (Tuple -> Tuple) -> Block -> Block
     alter' f (Bloc (d, c) n) = Bloc (f d, f c) n
     remove' : RBS -> RBS
-    remove' ((d, c), (Bloc (W a, W b) "id") :: xs)
+    remove' ((d, c), (Bloc (V a, V b) "id") :: xs)
         = let f = alter a b in remove' ((f d, f c), map (alter' f) xs)
     remove' ((d, c), xs) = ((d, c), xs)
 

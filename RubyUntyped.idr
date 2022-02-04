@@ -5,20 +5,9 @@ import Ruby
 import RBS
 import Data.Vect
 
-Ruby : Type
-Ruby = Free RComb Block
-
 infixl 3 <:>
 (<:>) : RComb -< f => Free f a -> Free f a -> Free f a
 (q <:> r) = ins (Seq q r)
-
-infixl 3 <<:>
-(<<:>) : RComb -< f => Free f a -> Free f a -> Free f a
-(q <<:> r) = ins (SeqL q r)
-
-infixl 3 <:>>
-(<:>>) : RComb -< f => Free f a -> Free f a -> Free f a
-(q <:>> r) = ins (SeqR q r)
 
 infixl 3 <|>
 (<|>) : RComb -< f => Free f a -> Free f a -> Free f a
@@ -56,9 +45,9 @@ outl = build 2 1 "outl"
 outr : Ruby
 outr = build 2 1 "outr"
 rsh : Ruby
-rsh = Var $ Bloc (T [V, T [V, V]], T [T [V, V], V]) "rsh"
+rsh = Var $ Bloc (T [W, T [W, W]], T [T [W, W], W]) "rsh"
 mux : Ruby
-mux = Var $ Bloc (T [T [V, V], V], V) "mux"
+mux = Var $ Bloc (T [T [W, W], W], W) "mux"
 max : Ruby
 max = build 2 1 "max"
 min : Ruby

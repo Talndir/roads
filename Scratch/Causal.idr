@@ -1,4 +1,4 @@
-module Causal
+module Scratch.Causal
 
 import Data.Vect
 import Data.Vect.Properties.Map

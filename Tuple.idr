@@ -1,4 +1,4 @@
-module Containers.Tuple
+module Tuple
 
 import public Rose
 import Data.String
@@ -32,3 +32,9 @@ data Block = Bloc Typ String
 public export
 Show Block where
     show (Bloc (d, c) n) = padRight 10 ' ' n ++ padRight 30 ' ' (show d) ++ show c
+
+public export
+genTuple : Nat -> Tuple
+genTuple 1 = W
+genTuple n = T (replicate n W)
+
