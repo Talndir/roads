@@ -11,3 +11,4 @@
 *.ptb
 *.synctex.gz
 *.lox
+*_lhs.tex
