@@ -106,59 +106,105 @@ Typ (ts, us) a = (Tuple ts a, Tuple us a)
 
 
 -- Properties
-namespace Ooo
 
-    mutual
-        data Ins : DShp -> Type where
-            TIns : Ins' xs -> Ins (T xs)
-            VIns : Ins (V In)
-        
-        data Ins' : Vect n DShp -> Type where
-            TIns' : Ins x -> Ins' xs -> Ins' (x :: xs)
-            VIns' : Ins' []
+mutual
+    public export
+    data Ins : DShp -> Type where
+        TIns : Ins' xs -> Ins (T xs)
+        VIns : Ins (V In)
+    
+    public export
+    data Ins' : Vect n DShp -> Type where
+        TIns' : Ins x -> Ins' xs -> Ins' (x :: xs)
+        VIns' : Ins' []
 
-    mutual
-        data Outs : DShp -> Type where
-            TOuts : Outs' xs -> Outs (T xs)
-            VOuts : Outs (V Out)
-        
-        data Outs' : Vect n DShp -> Type where
-            TOuts' : Outs x -> Outs' xs -> Outs' (x :: xs)
-            VOuts' : Outs' []
+mutual
+    public export
+    data Outs : DShp -> Type where
+        TOuts : Outs' xs -> Outs (T xs)
+        VOuts : Outs (V Out)
+    
+    public export
+    data Outs' : Vect n DShp -> Type where
+        TOuts' : Outs x -> Outs' xs -> Outs' (x :: xs)
+        VOuts' : Outs' []
 
-    mutual
-        data Compl : DShp -> DShp -> Type where
-            TCompl : Compl' xs ys -> Compl (T xs) (T ys)
-            VComplIO : Compl (V In) (V Out)
-            VComplOI : Compl (V Out) (V In)
-        
-        data Compl' : Vect n DShp -> Vect n DShp -> Type where
-            TCompl' : Compl x y -> Compl' xs ys -> Compl' (x :: xs) (y :: ys)
-            VCompl' : Compl' [] []
-
-public export
-data Is : Dir -> Rose Dir -> Type where
-    TIs : {xs : Vect n (Rose Dir)} -> HVect (map (Is d) xs) -> Is d (T xs)
-    VIs : Is d (V d)
-
-public export
-data Same : Eq a => Rose a -> Rose a -> Type where
-    TSame : Eq a => {xs, ys : Vect n (Rose a)} -> HVect (zipWith Same xs ys) -> Same (T xs) (T ys)
-    VSame : Eq a => {x : a} -> Same (V x) (V x)
+mutual
+    public export
+    data Compl : (x : DShp) -> (y : DShp) -> Type where
+        [search x, search y]
+        TCompl : Compl' xs ys -> Compl (T xs) (T ys)
+        VComplIO : Compl (V In) (V Out)
+        VComplOI : Compl (V Out) (V In)
+    
+    public export
+    data Compl' : Vect n DShp -> Vect n DShp -> Type where
+        TCompl' : Compl x y -> Compl' xs ys -> Compl' (x :: xs) (y :: ys)
+        VCompl' : Compl' [] []
 
 public export
-data Compl : (x : DShp) -> (y : DShp) -> Type where
+data Opp : (x : DShp) -> (y : DShp) -> Type where
     [search x, search y]
-    TCompl : {xs, ys : Vect n DShp} -> HVect (zipWith Compl xs ys) -> Compl (T xs) (T ys)
-    VCompl1 : Compl (V In) (V Out)
-    VCompl2 : Compl (V Out) (V In)
+    OppI : Compl x y -> Ins x ->  Opp x y
+    OppO : Compl x y -> Outs y -> Opp x y
 
+mutual
+    %hint
+    export
+    complIO : Compl x y -> Ins x -> Outs y
+    complIO VComplIO VIns = VOuts
+    complIO (TCompl cs) (TIns is) = TOuts (complIO' cs is)
+
+    complIO' : Compl' xs ys -> Ins' xs -> Outs' ys
+    complIO' VCompl' VIns' = VOuts'
+    complIO' (TCompl' a as) (TIns' b bs) = TOuts' (complIO a b) (complIO' as bs)
+
+mutual
+    %hint
+    export
+    complOI : Compl x y -> Outs y -> Ins x
+    complOI VComplIO VOuts = VIns
+    complOI (TCompl cs) (TOuts is) = TIns (complOI' cs is)
+
+    complOI' : Compl' xs ys -> Outs' ys -> Ins' xs
+    complOI' VCompl' VOuts' = VIns'
+    complOI' (TCompl' a as) (TOuts' b bs) = TIns' (complOI a b) (complOI' as bs)
+
+mutual
+    %hint
+    export
+    complCompl : Compl x y -> Compl y x
+    complCompl VComplIO = VComplOI
+    complCompl VComplOI = VComplIO
+    complCompl (TCompl cs) = TCompl (complCompl' cs)
+
+    complCompl' : Compl' xs ys -> Compl' ys xs
+    complCompl' VCompl' = VCompl'
+    complCompl' (TCompl' a as) = TCompl' (complCompl a) (complCompl' as)
+
+%hint
+export
+oppIn : Opp x y -> Ins x
+oppIn (OppI _ i) = i
+oppIn (OppO c o) = complOI c o
+
+%hint
+export
+oppOut : Opp x y -> Outs y
+oppOut (OppI c i) = complIO c i
+oppOut (OppO _ o) = o
+
+%hint
+export
+oppCompl : Opp x y -> Compl x y
+oppCompl (OppI c _) = c
+oppCompl (OppO c _) = c
 
 -- Ruby
 
 public export
 data RComb : (k : DShp' -> Type) -> DShp' -> Type where
-    Seq : {auto pf : Compl b b'} -> k (a, b) -> k (b', c) -> RComb k (a, c)
+    Seq : Compl b b' => k (a, b) -> k (b', c) -> RComb k (a, c)
     Par : k (a, b) -> k (c, d) -> RComb k (T [a, c], T [b, d])
     Inv : k (a, b) -> RComb k (b, a)
 
@@ -167,3 +213,8 @@ IFunctor RComb where
     imap f (Seq q r) = Seq (f q) (f r)
     imap f (Par q r) = Par (f q) (f r)
     imap f (Inv q) = Inv (f q)
+
+
+
+
+

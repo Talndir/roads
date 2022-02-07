@@ -12,14 +12,14 @@ drop' : (n : Nat) -> Lazy (Vect (n + m) a) -> Lazy (Vect m a)
 drop' 0 xs = xs
 drop' (S k) (x :: xs) = drop k xs
 
-handleSeq : {pf : Compl q q'} -> Interp a (p, q) -> Interp a (q', r) -> Interp a (p, r)
-handleSeq {pf} (Inter {dl=p, dr=q,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
+handleSeq : Compl q q' => Interp a (p, q) -> Interp a (q', r) -> Interp a (p, r)
+handleSeq (Inter {dl=p, dr=q,nl=(qnl,qml),nr=(qnr,qmr),pfl=qpfl,pfr=qpfr} qs)
     (Inter {dl=q',dr=r,nl=(rnl,rml),nr=(rnr,rmr),pfl=rpfl,pfr=rpfr} rs) =
         Inter {dl=p,dr=r,nl=(qnl,qml),nr=(rnr,rmr)} ss where
             eq1 : qnr = rml
-            eq1 = fst (complSwap pf qpfr rpfl)
+            eq1 = fst (complSwap qpfr rpfl)
             eq2 : rnl = qmr
-            eq2 = snd (complSwap pf qpfr rpfl)
+            eq2 = snd (complSwap qpfr rpfl)
             rwrml : Vect rml a -> Vect qnr a
             rwrml x = rewrite eq1 in x
             rwqmr : Vect qmr a -> Vect rnl a
@@ -63,7 +63,7 @@ handleInv (Inter {dl=p,dr=q,nl=(nl,ml),nr=(nr,mr),pfl=pfl,pfr=pfr} qs) =
         k ++ j
 
 alg : RComb (Interp a) x -> Interp a x
-alg (Seq {pf} q r) = handleSeq {pf=pf} q r
+alg (Seq q r) = handleSeq q r
 alg (Par q r) = handlePar q r
 alg (Inv q) = handleInv q
 
