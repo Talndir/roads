@@ -5,12 +5,59 @@ import Causal.Ruby
 import Causal.Utils
 import Causal.Properties
 
+%hint
+export
+complIO : Compl x y => Ins x => Outs y
+
+%hint
+export
+complOI : Compl x y => Outs y => Ins x
+
+%hint
+export
+complCompl : Compl x y -> Compl y x
+
+%hint
+export
+complIO' : Compl' xs ys => Ins' xs => Outs' ys
+
+%hint
+export
+complOI' : Compl' xs ys => Outs' ys => Ins' xs
+
+%hint
+export
+complCompl' : Compl' xs ys -> Compl' ys xs
+
+%hint
+export
+oppIn : Opp x y -> Ins x
+
+%hint
+export
+oppOut : Opp x y -> Outs y
+
+%hint
+export
+oppCompl : Opp x y -> Compl x y
+
 replmk : (ns : (Nat, Nat)) -> (x : Rose Dir) -> Type
 replmk ns x = ns = fst (make x)
 
+data Fork : (x : DShp) -> (y : DShp) -> (z : DShp) -> Type where
+    [search x, search y, search z]
+    Fork1 : Opp x y -> Fork x y y
+    Fork2 : Opp x y -> Fork y x y
+    Fork3 : Opp x y -> Fork y y x
+
+fork : {x, y, z : DShp} -> Fork x y z => Ruby a (x, T [y, z])
+fork {x,y,z=y} @{Fork1 opp} = ?f1
+fork {x,y,z=x} @{Fork2 opp} = ?f2
+fork {x,y=x,z} @{Fork3 opp} = ?f3
+
 export
-fork2 : {x, y : DShp} -> Opp x y => Ruby a (y, T [y, x])
-fork2 {x, y} with (make x) proof mkx
+fork'' : {x, y : DShp} -> Opp x y => Ruby a (y, T [y, x])
+fork'' {x, y} with (make x) proof mkx
     _ | ((n, m) ** _) with (make y) proof mky
      _ | ((n', m') ** _) =
         let (pfx, pfy) = (simp mkx, simp mky)
@@ -63,6 +110,24 @@ outl {x, y} with (make x) proof mkx
         (\v => let (p, q) = splitAt (nx + ny) v in let (r, _) = splitAt nx p in
         rewrite plusCommutative mx nx in r ++ q)
 
-f2 : {x, y, z, w : DShp} -> Opp x y => Opp z w
-  => Ruby a (T [y, x], T [T [y, w], z])
-f2 = inv outl <:> (inv fork2 <|> fork2) <:> rsh
+fork1 : {x, y, z, w : DShp} -> Opp x y => Opp z w => Ruby a (T [T [y, x], w], T [T [y, w], z])
+fork1 = (inv fork <|> fork) <:> rsh
+
+fork2 : {x, y, z, w : DShp} -> Opp x y => Opp z w
+     => Ruby a (T [y, x], T [T [y, w], z])
+fork2 = inv outl <:> fork1
+
+mux : {x, y : DShp} -> Opp x y => Ruby Bool (T [I, T [x, x]], y)
+mux with (make x) proof mkx
+    _ | ((nx, mx) ** (Iss fx gx)) with (make y) proof mky
+     _ | ((ny, my) ** (Iss fy gy)) with (make (T [x, x])) proof mkxs
+      _ | ((nxs, mxs) ** (Iss fxs gxs)) with (make (T [I, T [x, x]])) proof mkps
+       _ | ((p, q) ** (Iss fp gp)) with (make I)
+        _ | ((a, b) ** (Iss fa ga)) =
+            let (pfx, pfy) = (simp mkx, simp mky)
+                pf = makepf2 pfx pfx
+                pf' = makepf2 {x=I} {y=T[x,x]} %search pf
+                (Refl, Refl) = complSwap pfx pfy
+                (Refl) = insPf pfx
+                pf'' = cong fst pf'
+            in Ret . Inter $ rewrite cong fst pfy in ?w

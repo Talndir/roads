@@ -1,6 +1,6 @@
 module IAE
 
-import Indexed
+import public Indexed
 
 public export
 data IFree : (f : (a -> Type) -> a -> Type) -> (c : a -> Type) -> a -> Type where

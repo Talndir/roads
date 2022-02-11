@@ -138,7 +138,8 @@ mutual
         VComplOI : Compl (V Out) (V In)
     
     public export
-    data Compl' : Vect n DShp -> Vect n DShp -> Type where
+    data Compl' : (xs : Vect n DShp) -> (ys : Vect n DShp) -> Type where
+        [search xs, search ys]
         TCompl' : Compl x y -> Compl' xs ys -> Compl' (x :: xs) (y :: ys)
         VCompl' : Compl' [] []
 
