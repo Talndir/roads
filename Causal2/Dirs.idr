@@ -1,8 +1,9 @@
 module Causal2.Dirs
 
-import IAE
-import Data.Vect
-import Data.HVect
+import public IAE
+import public Data.Vect
+import public Data.HVect
+import Data.Stream
 
 data Rose a = T (Vect n (Rose a)) | V a
 
@@ -38,10 +39,6 @@ DShp = Rose Dir
 DShp' : Type
 DShp' = (DShp, DShp)
 
-I, O : DShp
-I = V In
-O = V Out
-
 data Typ : Type where
     W : Type -> Dir -> Typ
     N : Vect n Typ -> Typ
@@ -73,6 +70,12 @@ Showable t => Show (Data d t) where
 
 interface Rep a where
     rep : a
+
+Rep Int where
+    rep = 0
+
+Rep a => Rep (Stream a) where
+    rep = repeat rep
 
 %hint
 makeData : Rep a => Data In (W a In)
@@ -108,14 +111,14 @@ mutual
 mutual
     public export
     data Compl : (x : Typ) -> (y : Typ) -> Type where
-        [search x, search y]
+        [search y]
         VComplIO : Compl (W t In) (W t Out)
         VComplOI : Compl (W t Out) (W t In)
         TCompl : Compl' xs ys -> Compl (N xs) (N ys)
     
     public export
     data Compl' : (xs : Vect n Typ) -> (ys : Vect n Typ) -> Type where
-        [search xs, search ys]
+        [search ys]
         VCompl' : Compl' [] []
         TCompl' : Compl x y -> Compl' xs ys -> Compl' (x :: xs) (y :: ys)
 
@@ -123,17 +126,19 @@ data RComb : (k : Typ' -> Type) -> Typ' -> Type where
     Seq : Compl b b' => k (a, b) -> k (b', c) -> RComb k (a, c)
     Par : k (a, b) -> k (c, d) -> RComb k (N [a, c], N [b, d])
     Inv : k (a, b) -> RComb k (b, a)
+    Del : {a, b : Typ} -> Ins a => Compl a b => Data In a -> RComb k (a, b)
 
 IFunctor RComb where
     imap f (Seq q r) = Seq (f q) (f r)
     imap f (Par q r) = Par (f q) (f r)
     imap f (Inv q) = Inv (f q)
+    imap f (Del d) = Del d
 
 Ruby : Typ' -> Type
 Ruby = IFree RComb Interp
 
 infixl 3 <:>
-(<:>) : Compl b b' => Ruby (a, b) -> Ruby (b', c) -> Ruby (a, c)
+(<:>) : Ruby (a, b) -> Ruby (b', c) -> Compl b b' => Ruby (a, c)
 (q <:> r) = Do (Seq q r)
 
 infixl 3 <|>
@@ -142,6 +147,9 @@ infixl 3 <|>
 
 inv : Ruby (a, b) -> Ruby (b, a)
 inv q = Do (Inv q)
+
+del : {x, y : Typ} -> Ins x => Compl x y => Data In x -> Ruby (x, y)
+del d = Do (Del d)
 
 mutual
     %hint
@@ -215,6 +223,9 @@ fork @{pf} = Ret . Inter $ \(a, B [b, c]) => case pf of
     Fork2 _ _ => let t = copy b in (t, B [empty b, t])
     Fork3 _ _ => let t = copy c in (t, B [t, empty c])
 
+fork1 : {x, y : Typ} -> Ins x => Compl x y => Data In x => Data In y => Ruby (x, N [y, y])
+fork1 = Ret . Inter $ \(a, B [b, c]) => let t = copy a in (empty a, B [t, t])
+
 outl : {x, y, z : Typ} -> Ins y => Compl x z
     => Data In x => Data In y => Data In z => Ruby (N [x, y], z)
 outl = Ret . Inter $ \(B [a, b], c) => (B [swap c, empty b], swap a)
@@ -258,6 +269,7 @@ fork2 = ipi <:> test4
 {-
 test5 : {x, y, z, w : Typ}
      -> Ins x => Compl x y => Ins z => Compl z w
+     => Data In x => Data In y => Data In z => Data In w
      => Ruby (N [y, x], N [y, N [w, z]])
 test5 = inv outl <:> (inv fork <|> fork)
 
@@ -282,16 +294,147 @@ algPar (Inter f) (Inter g) = Inter $ \(B [x, y], B [u, v]) =>
 algInv : Interp (a, b) -> Interp (b, a)
 algInv (Inter f) = Inter $ \(y, x) => let (x', y') = f (x, y) in (y', x')
 
+%hint
+outData : {a : Typ} -> Outs a => Data In a
+outData @{VOuts} = LIO
+outData @{TOuts VOuts'} = B []
+outData {a=N(a::as)} @{TOuts (TOuts' t ts)} with (outData @{t})
+    _ | y with (outData @{TOuts ts})
+     _ | B ys = B (y :: ys)
+
+algDel : {a, b : Typ} -> Ins a => Compl a b => Data In b => Data In a -> Interp (a, b)
+algDel d = Inter $ \(x, y) => (empty x, swap d)
+
 alg : RComb Interp x -> Interp x
 alg (Seq q r) = algSeq q r
 alg (Par q r) = algPar q r
 alg (Inv q) = algInv q
+alg (Del d) = algDel d
 
 handle : IFree RComb Interp x -> Interp x
 handle = fold id alg
 
-Rep Int where
-    rep = 0
-
 run : (Data Out (N [W Int Out, W Int In]), Data Out (N [N [W Int Out, W Int Out], W Int In]))
 run = let (Inter f) = handle fork2 in f (B [LIO, LII 10], B [B [LIO, LIO], LII 20])
+
+
+mux : {x, y : Typ} -> Ins x => Compl x y => Data In x => Data In y
+   => Ruby (N [W Bool In, N [x, x]], y)
+mux {x, y} = assert_total $ Ret . Inter $ \(B [LII s, B [a, b]], k) =>
+    let k' = copy (if s then a else b) in (B [LOI, B [empty a, empty b]], k')
+
+max : Ruby (N [W Int In, W Int In], W Int Out)
+max = assert_total $ Ret . Inter $ \(B [LII a, LII b], LIO) => (B [LOI, LOI], LOO $ max a b)
+
+min : Ruby (N [W Int In, W Int In], W Int Out)
+min = assert_total $ Ret . Inter $ \(B [LII a, LII b], LIO) => (B [LOI, LOI], LOO $ min a b)
+
+id : {x, y : Typ} -> Compl x y => Data In x => Data In y => Ruby (x, y)
+id = Ret . Inter $ \(a, b) => (swap b, swap a)
+
+mux2 : Ruby (N [W Bool In, N [W Int In, W Int In]], N [W Int Out, W Bool Out])
+mux2 = fork <:> (mux <|> outl {y=N [W Int In, W Int In]})
+
+sort2 : Ruby (N [W Int In, W Int In], N [W Int Out, W Int Out])
+sort2 = fork <:> (min <|> max)
+
+lift : Typ -> Typ
+lift (W a d) = W (Stream a) d
+lift (N xs) = N (map lift xs)
+
+liftRep : {a : Typ} -> Data d a => Data d (lift a)
+liftRep @{LIO} = LIO
+liftRep @{LOI} = LOI
+liftRep @{LII x} = LII (repeat x)
+liftRep @{LOO x} = LOO (repeat x)
+liftRep {a=N []} @{B []} = B []
+liftRep {a=N(a::as)} @{B (x :: xs)} with (liftRep @{x})
+    _ | y with (liftRep @{B xs})
+     _ | B ys = B (y :: ys)
+
+split : {a : Typ} -> Data d (lift a) -> (Data d a, Data d (lift a))
+split {a=W a In} (LII (x :: xs)) = (LII x, LII xs)
+split {a=W a Out} (LOO (x :: xs)) = (LOO x, LOO xs)
+split {a=W _ In} LOI = (LOI, LOI)
+split {a=W _ Out} LIO = (LIO, LIO)
+split {a=N []} _ = (B [], B [])
+split {a=N (a::as)} (B (x :: xs)) with (split {a=a} x)
+    _ | (y, z) with (split {a=N as} (B xs))
+     _ | (B ys, B zs) = (B (y :: ys), B (z :: zs))
+
+join : {a : Typ} -> Data Out a -> Data Out (lift a) -> Data Out (lift a)
+join {a=W _ In} LOI LOI = LOI
+join {a=W a Out} (LOO x) (LOO xs) = LOO (x :: xs)
+join {a=N []} _ _ = B []
+join {a=N (a::as)} (B (x :: xs)) (B (y :: ys)) with (join {a=a} x y)
+    _ | z with (join {a=N as} (B xs) (B ys))
+     _ | B zs = B (z :: zs)
+
+InterpS : Typ' -> Type
+InterpS (a, b) = Interp (lift a, lift b)
+
+liftI : Interp a -> InterpS a
+liftI (Inter @{dx} @{dy} f) = Inter @{liftRep} @{liftRep} (\(x, y) =>
+    let ((x', xs'), (y', ys')) = (split x, split y)
+        (r, s) = f (x', y')
+        (Inter f') = liftI (Inter @{dx} @{dy} f)
+        (rs, ss) = f' (xs', ys')
+    in (join r ?rs, join s ?ss))
+
+%hint
+liftCompl : Compl a b => Compl (lift a) (lift b)
+liftCompl @{VComplIO} = VComplIO
+liftCompl @{VComplOI} = VComplOI
+liftCompl @{TCompl VCompl'} = TCompl VCompl'
+liftCompl @{TCompl (TCompl' t ts)} with (liftCompl @{t})
+    _ | r with (liftCompl @{TCompl ts})
+     _ | TCompl rs = TCompl (TCompl' r rs)
+
+%hint
+liftIns : Ins a => Ins (lift a)
+liftIns @{VIns} = VIns
+liftIns @{TIns VIns'} = TIns VIns'
+liftIns @{TIns (TIns' t ts)} with (liftIns @{t})
+    _ | r with (liftIns @{TIns ts})
+     _ | TIns rs = TIns (TIns' r rs)
+
+algDelS : {a, b : Typ} -> Ins a => Compl a b => Data In a -> InterpS (a, b)
+algDelS d = Inter @{liftRep} @{liftRep} (\(x, y) =>
+    (empty @{liftIns} x, join (swap d) (swap @{liftCompl} x)))
+
+algS : RComb InterpS x -> InterpS x
+algS (Seq @{p} q r) = algSeq @{liftCompl} q r
+algS (Par q r) = algPar q r
+algS (Inv q) = algInv q
+algS (Del d) = algDelS d
+
+handleS : Ruby (a, b) -> InterpS (a, b)
+handleS = fold {f=RComb} {c=Interp} {d=InterpS} liftI algS
+
+run2 : (Data Out (N [W (Stream Int) Out, W (Stream Int) In]), Data Out (N [N [W (Stream Int) Out, W (Stream Int) Out], W (Stream Int) In]))
+run2 = let (Inter f) = handle fork2 in f (B [LIO, LII (repeat 10)], B [B [LIO, LIO], LII (repeat 20)])
+
+
+I, O, IS, OS : Type -> Typ
+I x = W x In
+O x = W x Out
+IS x = W (Stream x) In
+OS x = W (Stream x) Out
+
+
+run3 : Stream (Data Out (N [O Int, I Int]), Data Out (N [N [O Int, O Int], I Int]))
+run3 =  let (Inter f) = handleS (fork2 {x=I Int, y=O Int, z=I Int, w=O Int})
+            (l, r) = f (B [LIO, LII (repeat 10)], B [B [LIO, LIO], LII (repeat 20)])
+            (p, q) = (unfoldr split l, unfoldr split r)
+        in zip p q
+
+run' : (Data Out (lift $ N [O Int, I Int]), Data Out (lift $ N [N [O Int, O Int], I Int]))
+run' =  let (Inter f) = handleS (fork2 {x=I Int, y=O Int, z=I Int, w=O Int})
+            (l, r) = f (B [LIO, LII (repeat 10)], B [B [LIO, LIO], LII (repeat 20)])
+        in (l, r)
+
+err : Stream (Data Out (I Int), Data Out (O Int))
+err =   let (Inter f) = handleS (id {x=I Int, y=O Int}) 
+            (l, r) = f (LII (repeat 1), LIO)
+            (p, q) = (unfoldr split l, unfoldr split r)
+        in zip p q
