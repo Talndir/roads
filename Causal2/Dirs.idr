@@ -50,6 +50,12 @@ data Showable : Typ -> Type where
 Typ' : Type
 Typ' = (Typ, Typ)
 
+I, O, IS, OS : Type -> Typ
+I x = W x In
+O x = W x Out
+IS x = W (Stream x) In
+OS x = W (Stream x) Out
+
 data Data : Dir -> Typ -> Type where
     LII : a -> Data In (W a In)
     LOO : a -> Data Out (W a Out)
@@ -76,6 +82,10 @@ Rep Int where
 
 Rep a => Rep (Stream a) where
     rep = repeat rep
+
+%hint
+makeStream : Data In a => Stream (Data In a)
+makeStream @{x} = repeat x
 
 %hint
 makeData : Rep a => Data In (W a In)
@@ -301,6 +311,14 @@ outData @{TOuts VOuts'} = B []
 outData {a=N(a::as)} @{TOuts (TOuts' t ts)} with (outData @{t})
     _ | y with (outData @{TOuts ts})
      _ | B ys = B (y :: ys)
+    
+%hint
+inData : {a : Typ} -> Ins a => Data Out a
+inData @{VIns} = LOI
+inData @{TIns VIns'} = B []
+inData {a=N(a::as)} @{TIns (TIns' t ts)} with (inData @{t})
+    _ | y with (inData @{TIns ts})
+     _ | B ys = B (y :: ys)
 
 algDel : {a, b : Typ} -> Ins a => Compl a b => Data In b => Data In a -> Interp (a, b)
 algDel d = Inter $ \(x, y) => (empty x, swap d)
@@ -338,6 +356,64 @@ mux2 = fork <:> (mux <|> outl {y=N [W Int In, W Int In]})
 sort2 : Ruby (N [W Int In, W Int In], N [W Int Out, W Int Out])
 sort2 = fork <:> (min <|> max)
 
+
+data InterpS : Typ' -> Type where
+    InterS : {x, y : Typ} -> Data In x => Data In y
+          => (Stream (Data In x, Data In y) -> Stream (Data Out x, Data Out y))
+          -> InterpS (x, y)
+
+liftI : Interp a -> InterpS a
+liftI (Inter f) = InterS $ \xs => map f xs
+
+algSeqS : Compl b b' => InterpS (a, b) -> InterpS (b', c) -> InterpS (a, c)
+algSeqS (InterS f) (InterS g) = InterS $ \rs => 
+    let (a0, c0) = unzip rs
+        (_, b1) = unzip . f $ zip a0 %search
+        (b2, _) = unzip . g $ zip (map swap' b1) c0
+        (a, b3) = unzip . f $ zip a0 (map swap' b2) 
+        (b4, c) = unzip . g $ zip (map swap' b3) c0
+    in zip a c
+
+algParS : InterpS (a, b) -> InterpS (c, d) -> InterpS (N [a, c], N [b, d])
+algParS (InterS f) (InterS g) = InterS
+    $ map (\((x, u), (y, v)) => (B [x, y], B [u, v]))
+    . uncurry zip
+    . (\(x, y) => (f x, g y))
+    . unzip
+    . map (\(B [x, y], B [u, v]) => ((x, u), (y, v)))
+
+algInvS : InterpS (a, b) -> InterpS (b, a)
+algInvS (InterS f) = InterS (map swp . f . map swp) where
+    swp : (p, q) -> (q, p)
+    swp (x, y) = (y, x)
+
+algDelS : {a, b : Typ} -> Ins a => Compl a b => Data In a -> InterpS (a, b)
+algDelS d = InterS $ \rs => (inData, swap d) :: map (\(x, y) => (inData, swap x)) rs
+
+algS : RComb InterpS x -> InterpS x
+algS (Seq q r) = algSeqS q r
+algS (Par q r) = algParS q r
+algS (Inv q) = algInvS q
+algS (Del d) = algDelS d
+
+handleS : Ruby (a, b) -> InterpS (a, b)
+handleS = fold {f=RComb} {c=Interp} {d=InterpS} liftI algS
+
+idS : Stream (Data Out (I Int), Data Out (O Int))
+idS = let (InterS f) = handleS id in f (repeat (LII 1, LIO))
+
+run2 : (Data Out (N [W (Stream Int) Out, W (Stream Int) In]), Data Out (N [N [W (Stream Int) Out, W (Stream Int) Out], W (Stream Int) In]))
+run2 = let (Inter f) = handle fork2 in f (B [LIO, LII (repeat 10)], B [B [LIO, LIO], LII (repeat 20)])
+
+run3 : Stream (Data Out (N [O Int, I Int]), Data Out (N [N [O Int, O Int], I Int]))
+run3 =  let (InterS f) = handleS fork2
+        in f $ repeat (B [LIO, LII 10], B [B [LIO, LIO], LII 20])
+
+delayTest : Stream (Data Out (I Int), Data Out (O Int))
+delayTest = assert_total $ let (InterS f) = handleS (del (LII (the Int 100)))
+            in f $ unfoldr (\x => ((LII x, LIO), x+1)) 0
+
+{-
 lift : Typ -> Typ
 lift (W a d) = W (Stream a) d
 lift (N xs) = N (map lift xs)
@@ -414,14 +490,6 @@ handleS = fold {f=RComb} {c=Interp} {d=InterpS} liftI algS
 run2 : (Data Out (N [W (Stream Int) Out, W (Stream Int) In]), Data Out (N [N [W (Stream Int) Out, W (Stream Int) Out], W (Stream Int) In]))
 run2 = let (Inter f) = handle fork2 in f (B [LIO, LII (repeat 10)], B [B [LIO, LIO], LII (repeat 20)])
 
-
-I, O, IS, OS : Type -> Typ
-I x = W x In
-O x = W x Out
-IS x = W (Stream x) In
-OS x = W (Stream x) Out
-
-
 run3 : Stream (Data Out (N [O Int, I Int]), Data Out (N [N [O Int, O Int], I Int]))
 run3 =  let (Inter f) = handleS (fork2 {x=I Int, y=O Int, z=I Int, w=O Int})
             (l, r) = f (B [LIO, LII (repeat 10)], B [B [LIO, LIO], LII (repeat 20)])
@@ -438,3 +506,4 @@ err =   let (Inter f) = handleS (id {x=I Int, y=O Int})
             (l, r) = f (LII (repeat 1), LIO)
             (p, q) = (unfoldr split l, unfoldr split r)
         in zip p q
+-}
