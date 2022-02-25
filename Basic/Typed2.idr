@@ -1,6 +1,6 @@
-module RubyTypedTest
+module Basic.Typed2
 
-import AE
+import Effects.Algebraic
 import Data.List
 import Data.String
 import Data.Vect

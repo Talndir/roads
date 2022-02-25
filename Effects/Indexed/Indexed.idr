@@ -1,4 +1,4 @@
-module Indexed
+module Effects.Indexed.Functor
 
 public export
 interface IFunctor (h : (a -> Type) -> a -> Type) where
@@ -34,6 +34,6 @@ convertUnit f x v = rewrite unitSingle f x in v
 convertUnit' : (f : Unit -> Type) -> (x : Unit) -> f () -> f x
 convertUnit' f x v = rewrite sym (unitSingle f x) in v
 
-public export
+--public export
 Const : (a : Type) -> Type -> (a -> Type)
 Const a b x = (b, (y : a ** y = x))

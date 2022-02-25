@@ -2,7 +2,7 @@ module Scratch.Causal
 
 import Data.Vect
 import Data.Vect.Properties.Map
-import Indexed
+import Effects.Indexed.Functor
 import IAE
 import Data.HVect
 import Data.Nat

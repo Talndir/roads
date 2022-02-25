@@ -1,4 +1,4 @@
-module AE
+module Effects.Algebraic
 
 public export
 data Free : (f : Type -> Type) -> (a : Type) -> Type where
@@ -118,3 +118,50 @@ public export
     inj = injsum
     proj = projsum
     lift = liftsum
+
+
+public export
+interface ModularCarrier c where
+    fwd : Monad m => m (c m) -> c m
+
+public export
+fwd_sig : ModularCarrier c => Functor f => f (c (Free f)) -> c (Free f)
+fwd_sig op = fwd (Op (map pure op))
+
+public export
+GenH : Type -> (c : (Type -> Type) -> Type) -> (m : Type -> Type)
+    -> ModularCarrier c => Monad m => Type
+GenH a c m = a -> c m
+
+public export
+AlgH : (f : Type -> Type) -> (c : (Type -> Type) -> Type) -> (m : Type -> Type)
+    -> Functor f => ModularCarrier c => Monad m => Type
+AlgH f c m = f (c m) -> c m
+
+public export
+FinH : Type -> (c : (Type -> Type) -> Type) -> (m : Type -> Type)
+    -> ModularCarrier c => Monad m => Type
+FinH b c m = c m -> m b
+
+public export
+HandlerH : (f : Type -> Type) -> (g : Type -> Type) -> Type -> Type
+        -> Functor f => Functor f => Type
+HandlerH f g a b = Free (f :+: g) a -> Free g b
+
+public export
+foldH : Functor f => Monad m => ModularCarrier c
+     => GenH a c m -> AlgH f c m -> (Free f a -> c m)
+foldH gen _   (Var x) = gen x
+foldH gen alg (Op op) = alg (map (foldH gen alg) op)
+
+public export
+handleH : Functor f => Monad m => ModularCarrier c
+       => GenH a c m -> AlgH f c m -> FinH b c m
+       -> (Free f a -> m b)
+handleH gen alg fin = fin . foldH gen alg
+
+public export
+handleH' : Functor f => Functor g => ModularCarrier c
+        => GenH a c (Free g) -> AlgH f c (Free g) -> FinH b c (Free g)
+        -> HandlerH f g a b
+handleH' gen alg fin = fin . foldH gen (alg </> fwd_sig)

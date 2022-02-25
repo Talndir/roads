@@ -1,8 +1,8 @@
-module RBS
+module Basic.RBS
 
-import AE
-import State
-import Ruby
+import Effects.Algebraic
+import Effects.State
+import Basic.Ruby
 import Data.List
 import Data.String
 

@@ -1,8 +1,8 @@
 module Scratch.Safe
 
-import AE
+import Effects.Algebraic
 import Lambda
-import Ann
+import Effects.Annotate
 import Data.Vect
 
 data Unify : TType -> TType -> Type where

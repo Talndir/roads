@@ -1,6 +1,6 @@
 module Lambda
 
-import AE
+import Effects.Algebraic
 
 public export
 data Lambda : (k : Type) -> Type where

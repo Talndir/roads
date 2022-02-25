@@ -1,8 +1,8 @@
-module RubyTyped
+module Basic.Typed
 
-import AE
-import Ruby
-import RBS
+import Effects.Algebraic
+import Basic.Ruby
+import Basic.RBS
 import Data.List
 
 data Typd : Type -> Typ -> Type where

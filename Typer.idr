@@ -1,6 +1,6 @@
 module Typer
 
-import AE
+import Effects.Algebraic
 import Lambda
 import Data.SortedMap
 

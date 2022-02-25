@@ -1,6 +1,6 @@
-module IAE
+module Effects.Indexed.Algebraic
 
-import public Indexed
+import public Effects.Indexed.Functor
 
 public export
 data IFree : (f : (a -> Type) -> a -> Type) -> (c : a -> Type) -> a -> Type where
@@ -26,6 +26,6 @@ fold :  {f : (a -> Type) -> (a -> Type)} -> IFunctor f =>
 fold gen _ (Ret x) = gen x
 fold gen alg (Do op) = alg (imap {f=IFree f c} {g=d} (fold gen alg) op)
 
-public export
-Gen : {a, b : Type} -> {f : (a -> Type) -> a -> Type} -> IFunctor f => {t : a} -> b -> IFree f (Const a b) t
-Gen {t} x = Ret (x, (t ** Refl))
+--public export
+--Gen : {a, b : Type} -> {f : (a -> Type) -> a -> Type} -> IFunctor f => {t : a} -> b -> IFree f (Const a b) t
+--Gen {t} x = Ret (x, (t ** Refl))

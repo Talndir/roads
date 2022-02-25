@@ -1,6 +1,6 @@
-module State
+module Effects.State
 
-import AE
+import Effects.Algebraic
 
 public export
 data State s k

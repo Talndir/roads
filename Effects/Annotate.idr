@@ -1,6 +1,6 @@
-module Ann
+module Effects.Annotate
 
-import AE
+import Effects.Algebraic
 
 public export
 data Ann : (f : Type -> Type) -> (ann : Type) -> (a : Type) -> Type where

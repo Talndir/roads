@@ -1,9 +1,9 @@
 module Typing
 
-import AE
+import Effects.Algebraic
 import Lambda
 import Typer
-import Ann
+import Effects.Annotate
 import Data.SortedMap
 
 MTyped : Type

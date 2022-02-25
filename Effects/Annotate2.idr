@@ -1,6 +1,6 @@
-module AE2
+module Effects.Annotate2
 
-import AE
+import Effects.Algebraic
 import Data.HVect
 
 data Ann : (f : Type -> Type) -> (hs : Vect n Type) -> (a : Type) -> Type where

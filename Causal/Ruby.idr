@@ -1,6 +1,6 @@
 module Causal.Ruby
 
-import public IAE
+import public Effects.Indexed.Algebraic
 import public Causal.Defs
 import Causal.Utils
 

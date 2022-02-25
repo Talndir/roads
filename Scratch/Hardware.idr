@@ -1,6 +1,6 @@
 module Scratch.Hardware
 
-import AE
+import Effects.Algebraic
 import Data.Vect
 
 data Hard : (k : Type) -> Type where

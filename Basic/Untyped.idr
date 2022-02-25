@@ -1,8 +1,8 @@
-module RubyUntyped
+module Basic.Untyped
 
-import AE
-import Ruby
-import RBS
+import Effects.Algebraic
+import Basic.Ruby
+import Basic.RBS
 import Data.Vect
 
 infixl 3 <:>

@@ -1,6 +1,6 @@
-module Ruby
+module Basic.Ruby
 
-import AE
+import Effects.Algebraic
 import public Tuple
 
 public export

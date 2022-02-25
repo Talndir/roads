@@ -1,9 +1,9 @@
 module Containers.RubyIndexed
 
-import AE
-import State
-import public Indexed
-import public IAE
+import Effects.Algebraic
+import Effects.State
+import public Effects.Indexed.Functor
+import public Effects.Indexed.Algebraic
 import public Tuple
 import Data.String
 

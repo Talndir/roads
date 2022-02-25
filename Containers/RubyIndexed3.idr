@@ -1,8 +1,8 @@
 module Containers.RubyIndexed3
 
-import AE
-import State
-import Indexed
+import Effects.Algebraic
+import Effects.State
+import Effects.Indexed.Functor
 import IAE
 import Tuple3
 import Data.List

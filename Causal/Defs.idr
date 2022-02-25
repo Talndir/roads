@@ -2,7 +2,7 @@ module Causal.Defs
 
 import public Data.Vect
 import public Data.HVect
-import public Indexed
+import public Effects.Indexed.Functor
 
 -- Rose trees
 
