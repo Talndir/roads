@@ -1,6 +1,6 @@
 module Causal2.Data
 
-import public IAE
+import public Effects.Indexed.Algebraic
 import public Data.Vect
 import public Data.HVect
 import public Data.Stream
@@ -9,6 +9,27 @@ public export
 data Rose : Type -> Type where
     V : a -> Rose a
     T : Vect n (Rose a) -> Rose a
+
+public export
+Show a => Show (Rose a) where
+    show (V x) = show x
+    show (T rs) = show rs
+
+public export
+Functor Rose where
+    map f (V x) = V (f x)
+    map f (T xs) = T $ map (map f) xs
+
+public export
+Foldable Rose where
+    foldr f a (V x) = f x a
+    foldr f a (T (x :: xs)) = foldr f (foldr f a (T xs)) x
+    foldr f a (T []) = a
+
+public export
+Traversable Rose where
+    traverse f (V x) = map V (f x)
+    traverse f (T xs) = pure T <*> traverse (traverse f) xs
 
 export
 vectEq : Eq a => (xs : Vect n a) -> (ys : Vect m a) -> Bool
@@ -31,31 +52,45 @@ namespace RoseSpace
     Nil = T []
 
 public export
-data Typ = TInt | TBool
+data Typ = TInt | TBool | TUnit
+
+public export
+Show Typ where
+    show TInt = "Int"
+    show TBool = "Bool"
+    show TUnit = "Unit"
 
 public export
 Eq Typ where
     (==) TInt TInt = True
     (==) TBool TBool = True
+    (==) TUnit TUnit = True
     (==) _ _ = False
 
 public export
 type : Typ -> Type
 type TInt = Int
 type TBool = Bool
+type TUnit = Unit
 
 public export
 rep : (t : Typ) -> type t
 rep TInt = 0
 rep TBool = False
+rep TUnit = ()
 
 public export
-Shp, Shp' : Type
-Shp = Rose Typ
-Shp' = (Shp, Shp)
+TShp, TShp' : Type
+TShp = Rose Typ
+TShp' = (TShp, TShp)
 
 public export
 data Dir = Left | Right
+
+public export
+Show Dir where
+    show Left = "L"
+    show Right = "R"
 
 public export
 Eq Dir where
@@ -152,35 +187,3 @@ mutual
         [search ys]
         VOpp' : Opp' [] []
         TOpp' : Opp x y -> Opp' xs ys -> Opp' (x :: xs) (y :: ys)
-
-public export
-data RComb : (k : DShp' -> Type) -> DShp' -> Type where
-    Seq : k (a, b) -> k (b, c) -> RComb k (a, c)
-    Par : k (a, b) -> k (c, d) -> RComb k ([a, c], [b, d])
-    Inv : {a', b' : DShp} -> Opp a a' => Opp b b' => k (a, b) -> RComb k (b', a')
-    Del : {a : DShp} -> Rights a => Data Right a -> RComb k (a, a)
-
-public export
-IFunctor RComb where
-    imap f (Seq q r) = Seq (f q) (f r)
-    imap f (Par q r) = Par (f q) (f r)
-    imap f (Inv q) = Inv (f q)
-    imap f (Del d) = Del d
-
-infixl 3 <:>
-public export
-(<:>) : IFree RComb k (a, b) -> IFree RComb k (b, c) -> IFree RComb k (a, c)
-(q <:> r) = Do (Seq q r)
-
-infixl 3 <|>
-public export
-(<|>) : IFree RComb k (a, b) -> IFree RComb k (c, d) -> IFree RComb k ([a, c], [b, d])
-(q <|> r) = Do (Par q r)
-
-public export
-inv : {a', b' : DShp} -> Opp a a' => Opp b b' => IFree RComb k (a, b) -> IFree RComb k (b', a')
-inv q = Do (Inv q)
-
-public export
-del : {a : DShp} -> Rights a => Data Right a -> IFree RComb k (a, a)
-del d = Do (Del d)
