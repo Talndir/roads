@@ -70,7 +70,9 @@ getShp x = do
 
 gen_typeIt : TBlock x -> Typer1 (NShp', Typer2 RT)
 gen_typeIt b = do
-    ns <- traverse newShp b.vars
+    l <- newShp (fst b.type)
+    r <- newShp (snd b.type)
+    let ns = b.vars (l, r)
     traverse_ newCon (b.con ns)
     pure (b.resNat ns, do
         ds <- traverse getShp ns

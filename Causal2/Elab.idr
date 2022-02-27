@@ -72,6 +72,30 @@ applyNamed : TTImp -> List Name -> TTImp
 applyNamed t [] = t
 applyNamed t (x :: xs) = applyNamed (namedApp t x (var x)) xs
 
+addT : TTImp -> TTImp
+addT (IApp _ (IApp _ (INamedApp _ (INamedApp _ (IVar _ (NS (MkNS ("RoseSpace" :: _)) "::")) _ t1) n t2) x) y) = var "Causal2.Data.T" .$ (var "Data.Vect.::" .$ addT x .$ addT y)
+addT (IApp _ x y) = addT x .$ addT y
+addT (INamedApp _ x n y) = INamedApp EmptyFC (addT x) n (addT y)
+addT w = w
+
+makeUnique : List String -> TTImp -> TTImp
+makeUnique ms = snd . makeUnique' [] where
+    makeUnique' : List String -> TTImp -> (List String, TTImp)
+    makeUnique' ns (IApp _ (IVar _ (NS _ "L"))  x) = (ns, implicitTrue)
+    makeUnique' ns (IApp _ (IVar _ (NS _ "R"))  x) = (ns, implicitTrue)
+    makeUnique' ns (IApp _ x y) =
+        let (ns', x') = makeUnique' ns x
+            (ns'', y') = makeUnique' ns' y in (ns'', x' .$ y')
+    makeUnique' ns (INamedApp _ x n y) =
+        let (ns', x') = makeUnique' ns x
+            (ns'', y') = makeUnique' ns' y in (ns'', INamedApp EmptyFC x' n y')
+    makeUnique' ns (IVar _ x) = let name = nameStr x in case name `elem` ms of
+        False => (ns, var x)
+        True => case (nameStr x) `elem` ns of
+            True => (ns, implicitTrue)
+            False => (name :: ns, var x)
+    makeUnique' ns w = (ns, w)
+
 getData : Name -> Elab (List Decl)
 getData x = do
     (_, t) <- lookupName x
@@ -80,30 +104,49 @@ getData x = do
     res <- resType r
     ns <- getNames vs
     let boundNames = vectOf (map (bindVar . nameStr) ns)
+    let varNames = vectOf (map var ns)
     cons <- traverse convertCon cs
     let is = map (\n => MkArg MW ImplicitArg (Just n) (var "Causal2.Data.TShp")) ns
     let bname = fromString ("Causal2.AUTOTYPED." ++ nameStr x)
     let tres = dToT res
+    let nv = makeInt . cast . length $ vs
 
     let sig = public' bname (piAll `(TBlock ~(tres)) is)
+
+    let res' = makeUnique (map nameStr ns) . addT $ res
+
+    --fail . printDoc . pretty $ res'
+
+    let funcName = fromString ("Causal2.AUTOTYPED." ++ nameStr x ++ "_func")
+    let funcSig = public' funcName `( forall a . (Rose a, Rose a) -> Vect ~(nv) (Rose a) )
+    let funcBody = def funcName [
+            var funcName .$ res' .= varNames,
+            var funcName .$ `( _ ) .= `( replicate ~(nv) [] )
+        ]
     
+    --fail . printDoc . pretty $ funcBody
+
     let block = def bname [var bname .= `(
             MkTBlock
             ~(makeStr . nameStr $ x)
             ~(tres)
-            ~(makeInt . cast . length $ vs)
+            ~(nv)
             ~(makeInt . cast . length $ cs)
-            ~(vectOf (map var ns))
             ~(makeLam (boundNames .= vectOf cons))
+            ~(var funcName)
             ~(makeLam (boundNames .= res))
             ~(makeLam (boundNames .= dToN res))
             ~(makeLam (boundNames .= applyNamed (var x) ns))
         ) ]
     
-    pure $ [sig, block]
+    pure $ [funcSig, funcBody, sig, block]
 
 public export
 makeBlock : Name -> Elab ()
 makeBlock n = do
     ds <- getData n
     declare ds
+
+pi1 : {x, y : DShp} -> Rights y => DBlock (T [x, T [y, y]], R TInt)
+
+--%runElab makeBlock `{pi1}

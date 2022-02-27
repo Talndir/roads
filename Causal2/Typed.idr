@@ -25,8 +25,8 @@ record TBlock (t : TShp') where
     type : TShp'
     nv : Nat
     nc : Nat
-    vars : Vect nv TShp
     con : forall a . Vect nv a -> Vect nc (Con a)
+    vars : forall a . (Rose a, Rose a) -> Vect nv (Rose a)
     res : Vect nv DShp -> DShp'
     resNat : Vect nv NShp -> NShp'
     run : (vs : Vect nv DShp) -> make (con vs) (DBlock (res vs))
