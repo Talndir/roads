@@ -2,8 +2,7 @@ module Causal2.Data
 
 import public Effects.Indexed.Algebraic
 import public Data.Vect
-import public Data.HVect
-import public Data.Stream
+--import public Data.Stream
 
 public export
 data Rose : Type -> Type where
@@ -50,6 +49,11 @@ namespace RoseSpace
     public export
     Nil : Rose a
     Nil = T []
+
+public export
+NShp, NShp' : Type
+NShp = Rose Nat
+NShp' = (NShp, NShp)
 
 public export
 data Typ = TInt | TBool | TUnit

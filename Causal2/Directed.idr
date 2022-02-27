@@ -1,6 +1,6 @@
 module Causal2.Directed
 
-import Causal2.Data
+import public Causal2.Data
 
 public export
 data DComb : (k : DShp' -> Type) -> DShp' -> Type where
@@ -17,8 +17,16 @@ IFunctor DComb where
     imap f (Del d) = Del d
 
 public export
+data Interp : DShp' -> Type where
+    Inter : {x, y : DShp}
+         -> ((Data Right x, Data Left y) -> (Data Left x, Data Right y))
+         -> Interp (x, y)
+
+public export
 record DBlock (d : DShp') where
     constructor MkDBlock
+    name : String
+    func : Interp d
 
 public export
 DRuby : DShp' -> Type

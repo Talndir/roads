@@ -1,3 +1,6 @@
 package roads
 
-pkgs = contrib
+
+depends = base      >= 0.5.1
+        , contrib   >= 0.5.1
+        , elab-util >= 0.5.0

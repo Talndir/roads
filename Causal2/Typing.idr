@@ -11,24 +11,15 @@ import Causal2.Dec
 import Causal2.Directed
 import Causal2.Typed
 import Causal2.Solve
+import Causal2.Utils
+import Causal2.Elab
 
-pi1 : {x, y : DShp} -> Rights y => DRuby ([x, y], x)
---pi1 = Ret . Inter $ \([a, b], c) => ([c, empty], a)
+%language ElabReflection
 
-b : {x, y : TShp} -> TBlock ([x, y], x)
-b = MkTBlock
-    "pi1"
-    2
-    1
-    [x, y]
-    (\[x, y] => [ >> y])
-    (\[x, y] => ([x, y], x))
-    --(\[x, y] => pi1 {x} {y})
-    (\[x, y] => MkDBlock)
+pi1 : {x, y : DShp} -> Rights y => DBlock ([x, y], x)
+pi1 = MkDBlock "pi1" (Inter $ \([a, b], c) => ([c, empty], a))
 
-NShp, NShp' : Type
-NShp = Rose Nat
-NShp' = (NShp, NShp)
+%runElab makeBlock `{pi1}
 
 ST, ET, RT : Type
 ST = (List Typ, List (Con Nat))
@@ -77,21 +68,11 @@ getShp x = do
             Yes p => pure $ index n ds
             No _ => throw ()
 
-Const : Type -> (x : Type) -> x -> Type
-Const t _ _ = t
-
-fold' : {a : Type} -> {f : (a -> Type) -> (a -> Type)} -> IFunctor f =>
-        {c : a -> Type} -> {d : Type} -> (forall x . c x -> d) ->
-        (forall x . f (Const d a) x -> d) ->
-        (forall x . IFree f c x -> d)
-fold' gen _ (Ret x) = gen x
-fold' gen alg (Do op) = alg (imap {f=IFree f c} {g=Const d a} (fold gen alg) op)
-
 gen_typeIt : TBlock x -> Typer1 (NShp', Typer2 RT)
 gen_typeIt b = do
     ns <- traverse newShp b.vars
     traverse_ newCon (b.con ns)
-    pure (b.res ns, do
+    pure (b.resNat ns, do
         ds <- traverse getShp ns
         case try (b.con ds) (b.run ds) of
             Nothing => throw ()
@@ -162,7 +143,7 @@ runAll x = do
         Just sols => run2 sols t2
 
 test1 : TRuby (T [V TInt, V TBool], V TInt)
-test1 = Ret b
+test1 = Ret pi1
 
 test2 : TRuby (T [T [V TInt, V TBool], V TInt], V TInt)
-test2 = Ret b <:> Ret b
+test2 = Ret pi1 <:> Ret pi1

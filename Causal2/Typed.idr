@@ -1,8 +1,8 @@
 module Causal2.Typed
 
-import Causal2.Data
-import Causal2.Directed
-import Causal2.Con
+import public Causal2.Data
+import public Causal2.Directed
+import public Causal2.Con
 
 public export
 data TComb : (k : TShp' -> Type) -> TShp' -> Type where
@@ -22,11 +22,13 @@ public export
 record TBlock (t : TShp') where
     constructor MkTBlock
     name : String
+    type : TShp'
     nv : Nat
     nc : Nat
     vars : Vect nv TShp
     con : forall a . Vect nv a -> Vect nc (Con a)
-    res : forall a . Vect nv (Rose a) -> (Rose a, Rose a)
+    res : Vect nv DShp -> DShp'
+    resNat : Vect nv NShp -> NShp'
     run : (vs : Vect nv DShp) -> make (con vs) (DBlock (res vs))
 
 public export
