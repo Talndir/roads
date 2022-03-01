@@ -1,4 +1,4 @@
-\documentclass[acmsmall,draft]{acmart}
+\documentclass[acmsmall,authordraft]{acmart}
 
 %%
 %% Formatting directives for lhs2TeX
@@ -8,6 +8,7 @@
 %format `comp_`     = "\circ "
 %format period_     = "\,.\,"
 %format forall_     = "\forall "
+%format public export = "\ "
 \makeatletter
 
 \let\HaskellResetHook\empty
@@ -31,6 +32,7 @@
 \iffalse
 \begin{code}
 import Data.Vect
+import Data.List
 \end{code}
 \fi
 
@@ -40,6 +42,13 @@ import Data.Vect
 \usepackage{ebproof}
 \usepackage{cleveref}
 \usepackage{quiver}
+\usepackage{xcolor}
+\usepackage{lmodern}
+\usepackage{anyfontsize}
+\usepackage{alltt}
+
+\definecolor{concol}{rgb}{.6,.2,.2}
+\renewcommand{\Conid}[1]{{\color{concol}\mathrm{#1}}}
 
 \DeclareMathOperator{\delay}{delay}
 \usetikzlibrary{arrows.meta}
@@ -73,7 +82,7 @@ import Data.Vect
 
 \begin{document}
 
-\title{Ruby on Roads}
+\title{Ruby}
 
 %%
 %% The "author" command and its associated commands are used to define
@@ -93,7 +102,9 @@ import Data.Vect
 \renewcommand{\shortauthors}{Tahir}
 
 \begin{abstract}
-    \fxwarning{Abstract}
+Hardware design is done almost exclusively in two dominant hardware description languages, Verilog and VHDL. Both are declarative languages that work at the signal level, wiring together inputs and outputs of hardware blocks. However, there are many situations when a different sort of programming paradigm is needed. Now that more development is being done in functional programming and high-level synthesis for hardware design, we revisit \emph{Ruby}, a relational HDL created primarily for DSP-like applications.
+
+This paper presents several embeddings of Ruby as a domain-specific language in \emph{Idris 2}, an up-and-coming dependently-typed functional language deeply inspired by Haskell. Algebraic effects are used not only to represent Ruby's syntax, but to assist in writing a type inference algorithm that interprets from one DSL to the next. Effect handlers give semantics to the language; non-standard semantics are given including compiling to Verilog and doing longest path estimation.
 \end{abstract}
 
 %%
@@ -124,9 +135,27 @@ import Data.Vect
 
 \section{Introduction}
 
-\fxwarning{Put an intro to the intro}
+Hardware description languages such as Verilog and VHDL are focused on the minutiae of hardware design - which logic is clocked and which is unclocked, which signal connects to where, and so on. By contrast, the mathematical descriptions of the functions these designs are supposed to perform are completely devoid of this information. There is a serious gap between the abstract mathematical operations and the way they are implemented at the hardware level. High-level ideas such as ``a triangular wave of registers'' or ``n-fold composition'' are common in DSP applications, but there is no support for expressing such things in common HDLs.
 
-\subsection{Ruby}
+High-level domain-specific languages can help bridge this gap. They can be used to express the functional properties of a design and do design exploration without worrying about bit-level specifics until later. They also enable high-level, source-to-source program transformations - the earlier the analysis, the more optimisations can be applied. However, there is also the potential to reason about low-level properties in a high-level DSL, and direct the way compilation will be done far down the line - lifting such properties through abstraction levels can be extremely useful \cite{SvenssonDSLExploration14,SheeranHardwareFP05}.
+
+\emph{Ruby} \cite{SheeranDescribingCircuits90} is one such language - being relational, it is able to represent a far larger class of programs than a functional language. It is also extremely compact and simple, making it perfect as an embedded DSL. Much exploration has been done on Ruby, both on the theoretical side in type theory and program derivation \cite{HuttonThesis92} and on practical implementation and non-standard analysis \cite{SinghHWAnalysis91}. However, current implementations of Ruby are done in Lazy ML, and provide only relational semantics, despite there being a notion of functional semantics under certain conditions \cite{HuttonRelations99}.
+
+Since the invention of Ruby, \emph{Algebraic effects} have developed as a new way of building domain-specific languages. They enable the rapid construction and composition of DSLs, both shallowly and deeply embedded. While modular algebraic effects have the same expressive power as algebraic monads \cite{SchrijversMonad19}, they supercede them in ease-of-use, namely the ease of composition \cite{SwierstraDTC08} and of writing new interpreters/semantics.
+
+In this paper, we will use algebraic effects as our foundation for implementing Ruby as a DSL. Our host language will be \emph{Idris 2}, a dependently-typed language based on quantative type theory \cite{BradyIdrisQTT21} and strongly inspired by Haskell. The paper is structued as follows:
+
+\begin{itemize}
+    \item In \cref{sec:ruby} we introduce Ruby, its syntax and rules.
+    \item In \cref{sec:effects} we introduce algebraic effects, motivate their usage, and develop a basic framework for defining and working with them within Idris.
+    \item In \cref{sec:dsl} we develop a sequence of DSLs for Ruby. We develop simple typing rules for the language, where each DSL has stronger rules than the last.
+    \item In \cref{sec:causal} we describe Hutton's idea of \emph{causal relations}, and use them to give Ruby programs functional semantics and compile them into first-class Idris functions for simulation.
+    \item In \cref{sec:nsi} we leverage the power and flexibility of algebraic effects to provide multiple non-standard interpretations of Ruby programs.
+\end{itemize}
+
+
+\section{Ruby}
+\label{sec:ruby}
 
 \emph{Ruby} is a simple relational language used for hardware descriptions.
 
@@ -180,10 +209,13 @@ It is very easy to draw pictures of relations. Below are pictures of two relatio
         \end{tikzpicture}
     \end{subfigure}
     \caption{A drawing of $R : X \leftrightarrow Y$ and two different drawings of $S : A \times B \leftrightarrow C \times D$.}
+    \Description
+        [A drawing of a block "R", and two different drawings of a block "S".]
+        {Three drawings. The first is of a block "R" with one input on the domain (left) and one output on the codomain (right). The second is of a block "S" with two inputs on the domain and codomain. The third is of "S" again, but the domain wires have moved so one is on the left and one is coming from the top, and the codomain wires have also moved so that one is coming from the bottom and one from the right.}
     \label{fig:relation}
 \end{figure}
 
-As it turns out, drawing pictures for relations is not just a visual exercise: there is a formal way of converting between the syntax of \fxwarning*{allegories}{relational programs and pictures}.
+As it turns out, drawing pictures for relations is not just a visual exercise: there is a formal way of converting between the syntax of relational programs and pictures \cite{BrownAllegories94}.
 
 There are three foundational operators defined on relations, which form the basic combinators for the language \emph{Ruby}:
 
@@ -215,6 +247,9 @@ The first $(-;-)$ is for sequential composition and has the following definition
         \draw[dashed] (0.5, -0.5) rectangle (7.5, 2.5);
     \end{tikzpicture}
     \caption{Sequential composition of relations.}
+    \Description
+        [A drawing of two relations sequentially composed together.]
+        {A drawing of the sequential composition of two relations. The codomain wire of the first block is connected to the domain wire of the second block.}
     \label{fig:rel_seq}
 \end{figure}
 
@@ -278,6 +313,9 @@ The second is for parallel composition and is defined by \[
     \end{subfigure}
 
     \caption{Parallel composition of relations, and two ways of drawing the inverse of a relation.}
+    \Description
+        [A drawing of parallel composition, and two different drawings of relational inverse.]
+        {Three drawings. The first is of parallel composition of two blocks; they are placed vertically above one another, with no wires connecting. The second is a drawing of the inverse of a block - the wire from the left is wrapped around the block to connect to its right-hand side, and similarly the wire from the right is wrapped around to connect to its left-hand side. The third is the inverse again, except rather than twisting the wires, the block is simply reflected along the off-diagonal.}
     \label{fig:rel_par_inv}
 \end{figure}
 
@@ -321,15 +359,19 @@ To combine all these concepts together, here is a small relation that we will be
         \end{tikzpicture}
     \end{subfigure}
     \caption{The definition of $fork2$ and a picture of it.}
+    \Description
+        [The defintion of fork2 and a drawing of it as a four-sided relation.]
+        {The defintion of fork2, which is pi one inverse composed with the parallel of fork inverse and fork, all composed with right shift. A diagram accompanies, showing fork2 as a four-sided relation. The relation it satisfies is that, "x" "x", is related to, "x" "y", "y". }
     \label{fig:fork2}
 \end{figure}
 
 
-\subsection{Algebraic Effects}
+\section{Algebraic Effects}
+\label{sec:effects}
 
 Algebraic effects are a new technique for developing DSLs that is gaining more traction in functional programming. Here we will briefly explain the motivation for algebraic effects and how they are implemented. Our implementation will be in Idris 2, but most of the code in this section is, with minor modifications, valid Haskell.
 
-Suppose we want to develop a DSL for some simple expression language that has two operations, addition and multiplication, and we want this expression language to be polymorphic in the type of vaules it operates on. The simplest way to develop such a DSL would be by defining the type of syntax trees as follows:
+Suppose we want to develop a DSL for some simple expression language that has two operations, addition and negation, and we want this expression language to be polymorphic in the type of vaules it operates on. The simplest way to develop such a DSL would be by defining the type of syntax trees as follows:
 
 %format Expr_1
 %format Val_1
@@ -364,6 +406,7 @@ Algebraic effects are similar, except that explicit recursion is replaced by imp
 
 %format Expr_2
 %format Add_2
+%format Val_2
 %format Neg_2
 %format term_2
 
@@ -406,7 +449,7 @@ handler_2 : Fix (Expr_2 Int) -> Int
 handler_2 = fold_fix alg_2
 \end{code}
 
-This seems all quite redundant at the moment - we have turned one datatype into two, we require one of them to be a functor, and the terms themselves are longer as every operation has to be preceded by an |In| constructor. That is because the benefit comes when we want to combine multiple DSLs together: using this system, it is trivial to take the coproduct of two or more signatures, resulting in the ability to use operations from either DSL:
+This seems all quite redundant at the moment - we have turned one datatype into two, we require one of them to be a functor, and the terms themselves are longer as every operation has to be preceded by an |In| constructor. That is because the benefit comes when we want to combine multiple DSLs together: using this system, it is trivial to take the coproduct of two or more signatures, resulting in the ability to use operations from either DSL \cite{SwierstraDTC08}:
 
 %format :+: = "+"
 
@@ -444,6 +487,7 @@ Functor f => Functor (Free f) where
     map f (Op op) = Op (map (map f) op)
 \end{code}
 \end{minipage}
+\vline\hspace{0.04cm}
 \begin{minipage}[t]{0.49\textwidth}
 \begin{code}
 Functor f => Applicative (Free f) where
@@ -458,7 +502,7 @@ Functor f => Monad (Free f) where
 \end{code}
 \end{minipage}
 
-\bigbreak
+\hfill\break
 
 |Free f a| is precisely the type of free monads over the functor |f| with carrier |a|. We can rewrite |Expr_2| to use |Free| as follows:
 
@@ -556,6 +600,7 @@ handler_34 = fold gen_3 (alg_3 </> alg_4)
 
 
 \section{Ruby as an embedded DSL}
+\label{sec:dsl}
 
 In this section we will explore the various ways of embedding Ruby into Idris. The goal is to eventually have a DSL that represents exactly the valid Ruby programs. What ``valid'' actually means is something we will refine as we go, which means we will be producing a sequence of DSLs, each more restrictive than the last, and translators that can go from one step to the next (if the program is valid).
 
@@ -566,9 +611,17 @@ The most basic embedding of Ruby is as a completely untyped language. This means
 %format gen_delay
 %format alg_delay
 
+\iffalse
 \begin{code}
-data RComb k = Seq k k | Par k k | Inv k
+namespace Untyped
+\end{code}
+\fi
 
+\begin{code}
+    public export
+    data RComb k = Seq k k | Par k k | Inv k
+\end{code}
+\begin{code}
 Functor RComb where
     map f (Seq x y) = Seq (f x) (f y)
     map f (Par x y) = Par (f x) (f y)
@@ -582,11 +635,16 @@ For example, our $fork2$ program could be written as
 
 %format pi_1
 
+\iffalse
 \begin{code}
-fork2 : Ruby String
-fork2 = Op (Seq (Op (Inv (Var "pi1")))
-           (Op (Seq (Op (Par (Op (Inv (Var "fork"))) (Var "fork")))
-               (Var "rsh"))))
+namespace Untyped
+\end{code}
+\fi
+
+\begin{code}
+    fork2 : Ruby String
+    fork2 = Op (Seq (Op (Inv (Var "pi1")))
+            (Op (Seq (Op (Par (Op (Inv (Var "fork"))) (Var "fork"))) (Var "rsh"))))
 \end{code}
 
 Writing a handler for this DSL is straightforward. For example, suppose we would like to apply nonstandard analysis to calculate the length of the longest path through the circuit. Intuitively, the semantics would be given by the equations
@@ -630,7 +688,7 @@ Show a => Functor f => Show (f String) => Show (Free f a) where
 \end{code}
 \fi
 
-\subsection{Typed Ruby, by tuple shape}
+\subsection{Typed Ruby, by signal shape}
 
 Now we would like to start making sure Ruby programs make some semantic sense. The first thing to check is that wires are connected together properly. Let $a,b,\ldots$ range over tuples of wires denoted by angled brackets, and let $W$ denote a single wire. For example, the tuple $\left<a,W\right>$ is a pair whose first element is any tuple, and whose second element is a single wire. We therefore have the following typing rules:
 
@@ -663,6 +721,9 @@ Now we would like to start making sure Ruby programs make some semantic sense. T
         \end{prooftree}
     \end{subfigure}
     \caption{Typing rules for Seq, Par and Inv.}
+    \Description
+        [Hoare logic type inference rules for Seq, Par and Inv.]
+        {Hoare logic type inference rules for Seq, Par and Inv. Seq requires that the codomain of the first block matches with the domain of the second. Par pairs the domains and codomains of its constituent blocks. Inv swaps the domain and codomain of the block.}
     \label{fig:typing1}
 \end{figure}
 
@@ -684,6 +745,9 @@ Looking back at \cref{fig:fork2}, we can see that the type of |fork2| is two sig
         \infer2[Seq]{\pi_1^{-1}\ ;\ [fork^{-1}, fork]\ ;\ rsh : \left<a,a\right> \leftrightarrow \left<\left<a,b\right>,b\right>}
     \end{prooftree}
     \caption{A derivation of $fork2 : \left<a,a\right> \leftrightarrow \left<\left<a,b\right>,b\right>$.}
+    \Description
+        [A derivation tree for the type of fork2.]
+        {A derivation tree for the type of fork2, which has type, "a" "a", to "a" "b", "b".}
     \label{fig:fork2deriv}
 \end{figure}
 
@@ -693,192 +757,95 @@ Now we need a way to represent these types. Since they are tuples of arbitrary s
 
 \begin{code}
 data Rose a = V a | T (Vect n (Rose a))
-
-Functor Rose where
-    map f (V x) = V (f x)
-    map f (T xs) = T (map (map f) xs)
 \end{code}
 
-We choose to use the length-indexed |Vect| type over the non-indexed |List| type because knowing the length statically will help us later when constructing various objects that rely on it.
-
-For ease of use, we also define the following aliases:
+We make |Rose| an instance of |Functor|, |Show|, |Foldable|, |Traversable| and |Eq|. Furthermore, we can overload the |Nil| and |(::)| operators to use list notation when constructing Rose trees:
 
 \begin{code}
-Shp : Type
-Shp = Rose Unit
-
-W : Shp
-W = V ()
+namespace RoseSpace
+    public export
+    (::) : Rose a -> Vect n (Rose a) -> Rose a
+    x :: xs = T (x :: xs)
+    public export
+    Nil : Rose a
+    Nil = T []
 \end{code}
 
-The types of relations are then of the form |(Shp, Shp)|. It is also convenient to write |W| rather than |V ()| everywhere. For now, we will only need rose trees of type |Unit|, however in future we will need to paramaterise by other types.
+This allows us to write |[x, [y, z]]| rather than |T [x, T [y, z]]|. However, since these are functions and not constructors, we still need to use |T| when pattern matching.
 
 \iffalse
 \begin{code}
+Show a => Show (Rose a) where
+    show (V x) = show x
+    show (T rs) = show rs
+
+Functor Rose where
+    map f (V x) = V (f x)
+    map f (T xs) = T $ map (map f) xs
+
+Foldable Rose where
+    foldr f a (V x) = f x a
+    foldr f a (T (x :: xs)) = foldr f (foldr f a (T xs)) x
+    foldr f a (T []) = a
+
+Traversable Rose where
+    traverse f (V x) = map V (f x)
+    traverse f (T xs) = pure T <*> traverse (traverse f) xs
+
 vectEq : Eq a => (xs : Vect n a) -> (ys : Vect m a) -> Bool
 vectEq (x::xs) (y::ys) = x == y && vectEq xs ys
 vectEq [] [] = True
 vectEq _ _ = False
 
 Eq a => Eq (Rose a) where
-    (V x) == (V y) = x == y
+    V x == V y = x == y
     (T xs) == (T ys) = vectEq xs ys
     _ == _ = False
 \end{code}
 \fi
 
-\subsubsection{Smart constructors}
+We choose to use the length-indexed |Vect| type over the non-indexed |List| type because knowing the length statically will help us later when constructing various objects that rely on it.
 
-One way of enforcing that these typing rules are adhered to is to use so-called ``smart'' constructors - hide the real data constructors and expose an interface of constructors that only allow for the construction of well-typed terms. For example, here is the definition of the smart constructor that replaces |Seq| (as a bonus, we can define it as a custom infix operator too):
+Strictly speaking, in hardware every single wire is of the same ``type'' - it s a single wire that can carry a single boolean value (ignoring the possibility of high impedance) therefore their values should be represented with an Idris ``Bool''. However, this would be extremely inefficient when simulating anything with large buses, say 32- or 64-bit wide buses. Therefore it would be better to allow for tuples to be of arbitrary type.
 
-%format <:> = "\,;"
+Unfortunately, due to reasons that will become clear later, we cannot simply use Rose trees over |Type|. We are required to construct our own universe of types:
 
-\iffalse
+%format type = "\Varid{type}"
+
+\begin{minipage}[t]{0.48\textwidth}
 \begin{code}
-namespace Smart
+data Typ = TInt | TBool | TUnit
 \end{code}
-\fi
-
+\end{minipage}
+\begin{minipage}[t]{0.48\textwidth}
 \begin{code}
-    Ruby' : Type -> Type
-    Ruby' a = Maybe (Ruby a, (Shp, Shp))
-
-    infixl 1 <:>
-    (<:>) : Ruby' a -> Ruby' a -> Ruby' a
-    (q <:> r) = do
-        (q', (ql, qr)) <- q
-        (r', (rl, rr)) <- r
-        if qr == rl then Just (Op (Seq q' r'), (ql, rr)) else Nothing
+type : Typ -> Type
+type TInt = Int
+type TBool = Bool
+type TUnit = Unit
 \end{code}
+\end{minipage}
 
-First, note the type that we are using: we need to pack a |Ruby a| (that represents the actual program) together with its type. Since the constructor can fail if the types don't match, we wrap the whole thing in a |Maybe|.
+For ease of use, we also define the following aliases:
 
-Note also that we can't store the types inside the program itself - |Ruby (a, (Shp, Shp))| won't work. This is because there is no way to access those values without interpreting the program, whereas here we are trying to \emph{construct} the program only.
-
-\iffalse
+\begin{minipage}[t]{0.48\textwidth}
 \begin{code}
-    infixl 1 <|>
-    (<|>) : Ruby' a -> Ruby' a -> Ruby' a
-    (q <|> r) = do
-        (q', (ql, qr)) <- q
-        (r', (rl, rr)) <- r
-        Just (Op (Par q' r'), (T [ql, rl], T [qr, rr]))
-
-    inv : Ruby' a -> Ruby' a
-    inv q = do
-        (q', (ql, qr)) <- q
-        Just (Op (Inv q'), (qr, ql))
+TShp : Type
+TShp = Rose Typ
 \end{code}
-\fi
-
-|Par| is also replaced by the pipe operator @|@ and |Inv| with the function |inv|. Together, we can now write our |fork2| anew:
-
-%format <|> = "\,\vert\,"
-
+\end{minipage}
+\begin{minipage}[t]{0.48\textwidth}
 \begin{code}
-    build : a -> Shp -> Shp -> Ruby' a
-    build n x y = Just (pure n, (x, y))
-
-    pi_1 : Ruby' String
-    pi_1 = build "pi1" (T [T [W, W], W]) (T [W, W])
-
-    fork : Ruby' String
-    fork = build "fork" W (T [W, W])
-
-    rsh : Ruby' String
-    rsh = build "rsh" (T [W, T [W, W]]) (T [T [W, W], W])
-
-    fork2 : Ruby' String
-    fork2 = inv pi_1 <:> (inv fork <|> fork) <:> rsh
+TShp' : Type
+TShp' = (TShp, TShp)
 \end{code}
+\end{minipage}
 
-You may be wondering, why must we specify the types so strictly? In the derivation in \cref{fig:fork2deriv} we showed that $fork2$ has type $\left<a,a\right> \leftrightarrow \left<\left<a,b\right>,b\right>$, yet here we are specifying it with $a = b = W$. Likewise, the full type of $\pi_{1}$ is $\left<a,b\right> \leftrightarrow a$. Therefore the type of |pi_1| should rightly be
-
-\begin{spec}
-pi_1 : {x, y : Shp} -> Ruby' String
-pi_1 {x, y} = build "pi1" (T [x, y]) x
-\end{spec}
-
-Here the |{x,y}| are optional paramaters that the compiler tries to fill in automatically. And therein lies the problem: the types of these programs cannot be deduced at runtime, but there is not enough information for them to be deduced at compile time either. Therefore we must give each subprogram its exact type, breaking the polymorphism of these blocks, and reducing the usefulness of the DSL. The other option is to use the polymorphic variants of |pi_1|, |fork| and |rsh| but then pass the types explicitly like
-
-\begin{spec}
-fork2 : Ruby' String
-fork2 = inv (pi_1 {x=T[T[W,W],W],y=T[W,W]}) <:>
-    (inv (fork {x=W}) <|> (fork {x=W})) <:>
-    (rsh {x=W,y=W,z=W})
-\end{spec}
-
-which is completely unreadable. However, with the power of dependent typing, we can move this information to the type level, which will make these values resolvable at compile time.
-
-
-\subsubsection{Dependent Types}
-
-We can move type information to the type level by introducing a datatype paramaterised by the type of the program:
-
-\iffalse
-\begin{code}
-namespace Dep
-\end{code}
-\fi
-
-\begin{code}
-    data Typed : Type -> (Shp, Shp) -> Type where
-        Tp : k -> Typed k t
-\end{code}
-
-We can paramaterise Ruby programs as follows:
-
-\begin{code}
-    TRuby : (Shp, Shp) -> Type -> Type
-    TRuby t a = Typed (Free RComb a) t
-\end{code}
-
-The type of the Ruby program is now embedded at the Idris type level, which means we can allow the Idris type system to do type inference, checking and unification for us:
-
-\begin{code}
-    (<:>) : TRuby (a, b) t -> TRuby (b, c) t -> TRuby (a, c) t
-    ((Tp q) <:> (Tp r)) = Tp (Op (Seq q r))
-\end{code}
-
-Here the |a|, |b| and |c| are implicit arguments like earlier (we could have used the |{a,b,c : Shp}| notation from before but it's not necessary here), however in this case those arguments are embedded within the |Typed| datatype which makes them compile-time values rather than runtime values. Note that unlike the smart constructors in the preceding section, these constructors aren't doing any additional checking - this constructor is just an alias to give us an infix operator and save us from writing |Tp (Op (Seq _ _))| everywhere.
-
-After giving similar definitions for parallel and inverse, we get to write our |fork2| program from before, but with full polymorphism:
-
-\iffalse
-\begin{code}
-    (<|>) : TRuby (a, b) t -> TRuby (c, d) t -> TRuby (T [a, c], T [b, d]) t
-    ((Tp q) <|> (Tp r)) = Tp (Op (Par q r))
-
-    inv : TRuby (a, b) t -> TRuby (b, a) t
-    inv (Tp q) = Tp (Op (Inv q))
-\end{code}
-\fi
-
-\begin{code}
-    build : t -> (x : (Shp, Shp)) -> TRuby x t
-    build v _ = Tp (Var v)
-
-    fork : {u : Shp} -> TRuby (u, T [u, u]) String
-    fork = build "fork" (u, T [u, u])
-
-    pi_1 : {u, v : Shp} -> TRuby (T [u, v], u) String
-    pi_1 = build "pi1" (T [u, v], u)
-    
-    rsh : {u, v, w : Shp} -> TRuby (T [u, T [v, w]], T [T [u, v], w]) String
-    rsh = build "rsh" (T [u, T [v, w]], T [T [u, v], w])
-\end{code}
-
-Once again, even though |u|, |v| and |w| are implicit arguments, they are resolved at compile time because when using |fork| in a program the result type is known, which means |u| is known, and hence there is no ambiguity and everything can be solved. |fork2| now goes back to how it ought to:
-
-\begin{code}
-    fork2 : {u, v : Shp} -> TRuby (T [u, u], T [T [u, v], v]) String
-    fork2 = inv pi_1 <:> (inv fork <|> fork) <:> rsh
-\end{code}
-
-However, we still have to use this extra datatype |Typed|. If only we could index the syntax trees themselves with their types...
-
+The types of relations are then of the form |TShp'|.
 
 \subsubsection{Indexed functors and monads}
+
+Indexed datatypes allow us to embed semantic data about our datatypes at the type-level, meaning they are checked at compile-time - our programs are guaranteed to be correct by construction \cite{McBrideKleisli11}. Since we were using functors and the free monad for untyped Ruby, it stands to reason that typed Ruby will use indexed functors and the indexed free monad.
 
 An indexed functor is a functor over the category $a \to Type$ where $a \in Type$. Ideally, a functor $F$ would be specified as being over some category $\mathcal{C}$, which means both indexed and non-indexed functors are represented and implemented in exactly the same way; unfortunately, no programming language to date has this feature. Therefore we will have to make do by defining a new typeclass to represent indexed functors:
 
@@ -895,37 +862,43 @@ Here are our Ruby combinators expressed as an indexed functor:
 
 \iffalse
 \begin{code}
-namespace Ind
+namespace Typed
 \end{code}
 \fi
 
 \begin{code}
-    data RComb : (k : (Shp, Shp) -> Type) -> (Shp, Shp) -> Type where
-        Seq : k (a, b) -> k (b, c) -> RComb k (a, c)
-        Par : k (a, b) -> k (c, d) -> RComb k (T [a, c], T [b, d])
-        Inv : k (a, b) -> RComb k (b, a)
-    
-    IFunctor RComb where
-        imap f (Seq q r) = Seq (f q) (f r)
-        imap f (Par q r) = Par (f q) (f r)
-        imap f (Inv q) = Inv (f q)
+    public export
+    data TComb : (k : TShp' -> Type) -> TShp' -> Type where
+        Seq : k (a, b) -> k (b, c) -> TComb k (a, c)
+        Par : k (a, b) -> k (c, d) -> TComb k ([a, c], [b, d])
+        Inv : k (a, b) -> TComb k (b, a)
+\end{code}
+\begin{code}
+IFunctor TComb where
+    imap f (Seq q r) = Seq (f q) (f r)
+    imap f (Par q r) = Par (f q) (f r)
+    imap f (Inv q) = Inv (f q)
 \end{code}
 
-We have bypassed the |Typed| datatype completely by putting the types directly into the effect's signature. Of course we now need to make an indexed version of |Monad| as well:
+Our programs, and all subprograms, are now directly indexed by their types.Of course we now need to make an indexed version of |Monad| as well:
 
 \begin{code}
 interface IFunctor m => IMonad (a : Type) (m : (a -> Type) -> a -> Type) where
     skip : {f : a -> Type} -> (forall x . f x -> m f x)
     extend : {f, g : a -> Type} -> (forall x . f x -> m g x) -> (forall x . m f x -> m g x)
+\end{code}
 
+\iffalse
+\begin{code}
 (>>=) : {a : Type} -> {m : (a -> Type) -> a -> Type} -> IMonad a m => {f, g : a -> Type}
-     -> (forall x . m f x -> (forall y . f y -> m g y) -> m g x)
+        -> (forall x . m f x -> (forall y . f y -> m g y) -> m g x)
 (v >>= k) = extend {f} k v
 
 pure : {a : Type} -> {m : (a -> Type) -> a -> Type} -> IMonad a m => {f : a -> Type}
     -> (forall x . f x -> m f x)
 pure = skip {f}
 \end{code}
+\fi
 
 We also overload the |>>=| and |pure| operators to work with |IMonad| rather than |Monad|. Our implementation of |IFree| is straightforward:
 
@@ -944,7 +917,18 @@ data IFree : (f : (a -> Type) -> a -> Type) -> (c : a -> Type) -> a -> Type wher
     extend k (Do op) = Do (imap {f=IFree h f} (extend {m=IFree h} k) op)
 \end{code}
 
-Sometimes the typechecker gets a bit lost so we have to help it along by manually passing |f| and |g| to |imap| and |extend|, but since we've done this here it won't be necessary to do it anywhere else. Note that we skip defining the |IApplicative|.\fxwarning{Atkey} Indexed applicatives are a little tricky and don't exist in general, extra restrictions are needed if you want to implement them but since we won't need them for this paper we'll just leave them out.
+\iffalse
+\begin{code}
+ifold :  {f : (a -> Type) -> (a -> Type)} -> IFunctor f =>
+    {c : a -> Type} -> {d : a -> Type} -> (forall x . c x -> d x) ->
+    (forall x . f d x -> d x) ->
+    (forall x . IFree f c x -> d x)
+ifold gen _ (Ret x) = gen x
+ifold gen alg (Do op) = alg (imap {f=IFree f c} {g=d} (ifold gen alg) op)
+\end{code}
+\fi
+
+Sometimes the typechecker gets a bit lost so we have to help it along by manually passing |f| and |g| to |imap| and |extend|, but since we've done this here it won't be necessary to do it anywhere else. Note that we skip defining the |IApplicative|. Indexed applicatives are more tricky and don't exist in general \cite{AtkeyParameterised09}, however we won't need them here so we skip their implementation.
 
 As mentioned already, for now we won't take advantage of the special feature of indexing that allows the type of the subtrees to vary; rather, we'll be using a constant indexer:
 
@@ -952,45 +936,50 @@ As mentioned already, for now we won't take advantage of the special feature of 
 Const : Type -> (x : Type) -> x -> Type
 Const t _ _ = t
 \end{code}
+
 \iffalse
 \begin{code}
-namespace Ind
+namespace Typed
 \end{code}
 \fi
-\begin{code}
-    Ruby : Type -> (Shp, Shp) -> Type
-    Ruby a x = IFree RComb (Const a (Shp, Shp)) x
-\end{code}
 
-The smart constructors are implented as
+Rather than writing |Ret( ... (Ret ...))| everywhere, we define smart constructors and some custom operators to go with them:
+
+%format <:> = "\,;"
+%format <|> = "\,\vert\,"
 
 \begin{code}
-    (<:>) : Ruby t (a, b) -> Ruby t (b, c) -> Ruby t (a, c)
+    infixl 1 <:>
+    (<:>) : IFree TComb k (a, b) -> IFree TComb k (b, c) -> IFree TComb k (a, c)
     (q <:> r) = Do (Seq q r)
-    
-    (<|>) : Ruby t (a, b) -> Ruby t (c, d) -> Ruby t (T [a, c], T [b, d])
+
+    infixl 1 <|>
+    (<|>) : IFree TComb k (a, b) -> IFree TComb k (c, d) -> IFree TComb k (T [a, c], T [b, d])
     (q <|> r) = Do (Par q r)
-    
-    inv : Ruby t (a, b) -> Ruby t (b, a)
+
+    inv : IFree TComb k (a, b) -> IFree TComb k (b, a)
     inv q = Do (Inv q)
 \end{code}
 
-Once again, the code for |fork2| is
+The code for |fork2| is now
 
 \begin{code}
-    build : t -> (x : (Shp, Shp)) -> Ruby t x
+    TRuby : Type -> TShp' -> Type
+    TRuby a = IFree TComb (Const a TShp')
+
+    build : t -> (x : TShp') -> TRuby t x
     build v _ = Ret v
 
-    fork : {u : Shp} -> Ruby String (u, T [u, u])
+    fork : {u : TShp} -> TRuby String (u, [u, u])
     fork = build "fork" (u, T [u, u])
 
-    pi_1 : {u, v : Shp} -> Ruby String (T [u, v], u)
+    pi_1 : {u, v : TShp} -> TRuby String ([u, v], u)
     pi_1 = build "pi1" (T [u, v], u)
-    
-    rsh : {u, v, w : Shp} -> Ruby String (T [u, T [v, w]], T [T [u, v], w])
-    rsh = build "rsh" (T [u, T [v, w]], T [T [u, v], w])
 
-    fork2 : {u, v : Shp} -> Ruby String (T [u, u], T [T [u, v], v])
+    rsh : {u, v, w : TShp} -> TRuby String ([u, [v, w]], [[u, v], w])
+    rsh = build "rsh" ([u, [v, w]], [[u, v], w])
+
+    fork2 : {u, v : TShp} -> TRuby String ([u, u], [[u, v], v])
     fork2 = inv pi_1 <:> (inv fork <|> fork) <:> rsh
 \end{code}
 
@@ -1024,40 +1013,49 @@ Consider for a moment the actual purpose of Ruby: to describe hardware. Unfortun
         \draw[<-] (8, 1.35) -- (b);
     \end{tikzpicture}
     \caption{A picture of $add\ ;\ add^{-1}$. Arrows represent the direction of data flow.}
+    \Description
+        [A picture of add composed with add inverse, with arrows representing the direction of data flow.]
+        {A picture of add composed with add inverse. There are arrows on the domain of the first add pointing towards the add, and arrows on the codomain of the second add again pointing inwards towards the add. The "output" of the two adds meet in the middle, and both adds are driving the same wire which is symbolised by the arrows pointing against each other and clashing.}
     \label{fig:addfail}
 \end{figure}
 
-This new information requires an update to our typing rules. Earlier, we used $A,B,\ldots$ to vary over empty tuples, which denote the structure of the domain and codomain. Now we will vary over tuples of directions. There are two ways to set this up: we can let directions be \emph{Right} and \emph{Left} (i.e. arrow pointing to the right or to the left), or \emph{In} and \emph{Out} (i.e. arrows entering the block or leaving the block). We choose to use \emph{In} and \emph{Out} as the physical direction is not imporant compared to whether the wire is driving the block as an input or it is being driven as an output. We can now adjust our typing rules, specifically Seq: \fxwarning{Binary algebras}
+This new information requires an update to our typing rules. Earlier, we used $A,B,\ldots$ to vary over empty tuples, which denote the structure of the domain and codomain. Now we will vary over tuples of directions. There are two ways to set this up: we can let directions be \emph{Right} and \emph{Left} (i.e. arrow pointing to the right or to the left), or \emph{In} and \emph{Out} (i.e. arrows entering the block or leaving the block). The more natural choice is to use \emph{In} and \emph{Out}, since the information of being an input or output is more important that the exact direction of data flow. It is also symmetric - inputs and outputs don't change under inverse.
+
+However, in practice we found it significantly easier to use \emph{Left} and \emph{Right} when actually implementing primitives. They are also equal when it comes to typing rules: \emph{In} and \emph{Out} would change our typing rule for |Seq| whereas \emph{Left} and \emph{Right} would change it for |Inv|. Neither are easier or harder to use than the other, although once again in practice |Seq| is used more than |Inv| therefore we ought to prioritise an easier typing rule for it.
 
 \begin{figure}[htpb]
     \centering
-    \begin{subfigure}[c]{0.4\textwidth}
+    \begin{subfigure}[c]{0.3\textwidth}
         \begin{prooftree}
             \hypo{Q : a \leftrightarrow b}
-            \hypo{R : \overline{b} \leftrightarrow c}
-            \infer2[Seq]{(Q;R) : a \leftrightarrow c}
-        \end{prooftree}    
+            \infer1[Inv]{Q^{-1} : \overline{b} \leftrightarrow \overline{a}}
+        \end{prooftree}
     \end{subfigure}
-    \quad where \quad
+    where \quad \quad
     \begin{subfigure}[c]{0.4\textwidth}
         \begin{align*}
-            \overline{In} &= Out \\
-            \overline{Out} &= In \\
+            \overline{Left} &= Right \\
+            \overline{Right} &= Left \\
             \overline{\left<a_{1},\ldots,a_{n}\right>} &= \left<\overline{a_{1}},\ldots,\overline{a_{n}}\right>
         \end{align*}
     \end{subfigure}
-    \caption{New typing rule for Seq, and definition of the complement operation.}
+    \caption{New typing rule for |Inv|, and definition of the complement operation.}
+    \Description
+        [A new typing rule for Inv, and a defintion of the complement operation.]
+        {A new typing rule for inv, where if Q has type "a" to "b" then Q inverse has type "b" bar to "a" bar, where bar denotes complement. Complement is defined as: the complement of left is right, the complement of a tuple is the tuple of the complements, and complement is symmetric.}
     \label{fig:typing2}
 \end{figure}
 
-The complement is needed because for sequential composition, outputs of the first block must match with inputs of the second block, and vice-versa. The typing rules for $Par$ and $Inv$ are unchanged.
+If we wish to be more mathematical, our types now live in a binary algebra, where $C(a,b)$ means that $a$ and $b$ are complementary. There is a rich type theory around this; although the theory is not practical to actually implement, it can aid in proving correctness-preserving transformations \cite{HuttonThesis92}.
 
-The types of polymorphic primitives such as $fork$ have changed dramatically. We will need to define two new predicates, $\iota$ and $\omega$. $\iota(a)$ holds iff all elements of $a$ are $In$, and likewise $\omega(a)$ holds iff all elements of $a$ are $Out$. We have the following laws:
+When inverting a block, lefts and rights swap. The rules for |Seq| and |Par| remain unchanged.
+
+The types of polymorphic primitives such as $fork$ have changed dramatically. We will need to define two new predicates, $\ell$ and $\rho$. $\ell(a)$ holds iff all elements of $a$ are $Left$, and likewise $\rho(a)$ holds iff all elements of $a$ are $Right$. We have the following laws:
 
 \begin{align*}
-    \iota(In) \qquad \neg \iota(Out) \qquad \iota(\left<a_{1},\ldots,a_{n}\right>) &\iff \bigwedge \iota(a_{k}) \\
-    \omega(Out) \qquad \neg \omega(In) \qquad \omega(\left<a_{1},\ldots,a_{n}\right>) &\iff \bigwedge \omega(a_{k}) \\
-    \iota(a) \iff \omega(\overline{a})
+    \ell(In) \qquad \neg \ell(Out) \qquad \ell(\left<a_{1},\ldots,a_{n}\right>) &\iff \bigwedge \ell(a_{k}) \\
+    \rho(Out) \qquad \neg \rho(In) \qquad \rho(\left<a_{1},\ldots,a_{n}\right>) &\iff \bigwedge \rho(a_{k}) \\
+    \ell(a) \iff \rho(\overline{a})
 \end{align*}
 
 For example, the typing rules for our three primitives $\pi_{1}$, $fork$ and $rsh$ are
@@ -1065,193 +1063,341 @@ For example, the typing rules for our three primitives $\pi_{1}$, $fork$ and $rs
 \begin{figure}[htpb]
     \centering
     \begin{prooftree}
-        \hypo{\iota(b)}
-        \infer1{\pi_1 : \left<a,b\right> \leftrightarrow \overline{a}}
+        \hypo{\rho(b)}
+        \infer1{\pi_1 : \left<a,b\right> \leftrightarrow a}
     \end{prooftree}
     \qquad \qquad
     \begin{prooftree}
         \hypo{\iota(b)}
         \rewrite{}
-        \infer1{rsh : \left<a,\left<b,c\right>\right> \leftrightarrow \left<\left<\overline{a},\overline{b}\right>,\overline{c}\right>}
+        \infer1{rsh : \left<a,\left<b,c\right>\right> \leftrightarrow \left<\left<a,b\right>,c\right>}
     \end{prooftree}
     \bigbreak
     \begin{prooftree}
-        \hypo{\iota(a)}
-        \infer1{fork : a \leftrightarrow \left<\overline{a},\overline{a}\right>}
+        \hypo{\rho(a)}
+        \infer1{fork : a \leftrightarrow \left<a,a\right>}
     \end{prooftree}
     \quad
     \begin{prooftree}
-        \hypo{\iota(a)}
+        \hypo{\rho(a)}
         \infer1{fork : \overline{a} \leftrightarrow \left<\overline{a},a\right>}
     \end{prooftree}
     \quad
     \begin{prooftree}
-        \hypo{\iota(a)}
+        \hypo{\rho(a)}
         \infer1{fork : \overline{a} \leftrightarrow \left<a,\overline{a}\right>}
     \end{prooftree}
     \caption{Typing rules for $\pi_{1}$, $fork$ and $rsh$.}
+    \Description
+        [Typing rules in this new system for pi one, fork and right shift.]
+        {Typing rules for pi one, fork and right shift. Pi one requires that its second argument (the value that will be discarded) is going to the right. Right shift has no conditions. There are three typing rules for fork. The first is that "a" is going to the right, and the fork is from "a", to "a" "a". The second is that "a" is going to the right, and the fork is from "a" bar, to "a" bar "a". The third is that "a" is going to the right, and the fork is from "a" bar, to "a", "a" bar. }
     \label{fig:typingPrims}
 \end{figure}
 
 $\pi_{1}$ and $rsh$ are simple enough, but with $fork$ things start to get tricky - there are three different ways of typing a fork, because while the block is completely polymorphic in the shape of its signals, one must be an input and the other two must be outputs.
 
-In practice, however, we would like the type to be free from functions; it may be difficult for type inference to infer information from a signature with complements, so it would be better to express complements as an explicit property $C$ where $C(a,b) \iff a = \overline{b}$. Inferring a proof for $C(a,I)$ for a type $T [a, I]$ is easier for the Idris type system than unifying $\left<a,\overline{a}\right>$ and $T [a, I]$ for instance. Our actual implemetation will therefore use the following typing rules:
+In practice, however, we would like the type to be free from functions; it may be difficult for type inference to infer information from a signature with complements, so it would be better to express complements as an explicit property $C$ where $C(a,b) \iff a = \overline{b}$. Inferring a proof for $C(a,L)$ for a type $T [a, L]$ is easier for the Idris type system than unifying $\left<a,\overline{a}\right>$ and $T [a, L]$ for instance. Our actual implemetation will therefore use the following typing rules for $fork$ and $inv$:
 
 \begin{figure}[htpb]
     \centering
     \begin{prooftree}
-        \hypo{\iota(b)}
-        \hypo{C(a,c)}
-        \infer2{\pi_1 : \left<a,b\right> \leftrightarrow c}
-    \end{prooftree}
-    \qquad \qquad
-    \begin{prooftree}
+        \hypo{Q : a \leftrightarrow b}
         \hypo{C(a,x)}
         \hypo{C(b,y)}
-        \hypo{C(c,z)}
-        \infer3{rsh : \left<a,\left<b,c\right>\right> \leftrightarrow \left<\left<x,y\right>,z\right>}
+        \infer3[Inv]{Q^{-1} : y \leftrightarrow x}
     \end{prooftree}
     \bigbreak
     \begin{prooftree}
-        \hypo{\iota(a)}
-        \hypo{C(a,b)}
-        \infer2{fork : a \leftrightarrow \left<b,b\right>}
+        \hypo{\rho(a)}
+        \infer1{fork : a \leftrightarrow \left<a,a\right>}
     \end{prooftree}
     \quad
     \begin{prooftree}
-        \hypo{\iota(a)}
+        \hypo{\rho(a)}
         \hypo{C(a,b)}
         \infer2{fork : b \leftrightarrow \left<a,b\right>}
     \end{prooftree}
     \quad
     \begin{prooftree}
-        \hypo{\iota(a)}
+        \hypo{\rho(a)}
         \hypo{C(a,b)}
         \infer2{fork : b \leftrightarrow \left<b,a\right>}
     \end{prooftree}
-    \caption{Better typing rules for $\pi_{1}$, $fork$ and $rsh$.}
+    \caption{Better typing rules for $fork$ and $invs$.}
+    \Description
+        [Better typing rules for fork and inv.]
+        {Better typing rules for fork and inv. Wherever a bar was used previously, it has been replaced with a new variable and an additional requirement that the two variables are complementary, where see "x" "y" means "x" and "y" are complementary. The rule for inv is that if Q is from "a" to "b", see "a" "x" and see "b" "y" then Q inverse is of type "y" to "x". The first fork rule is unchanged. The second says that if "a" is going to the right and see "a" "b" then fork is of type "b" to "a" "b". The third says that if "a" is going to the right and see "a" "b" then fork is of type "b" to "b" "a".}
     \label{fig:typingPrims2}
 \end{figure}
 
-Now there are no functions on the bottom of any of these rules, only free variables that are constrained by the properties on the top. The implementation for $\iota$ is
+Now there are no functions on the bottom of any of these rules, only free variables that are constrained by the properties on the top.
 
-\iffalse
+\begin{minipage}[t]{0.32\textwidth}
 \begin{code}
-namespace Dirs
+data Dir = Left | Right
 \end{code}
-\fi
+\end{minipage}
+\begin{minipage}[t]{0.32\textwidth}
 \begin{code}
-    data Dir = In | Out
-
-    DShp : Type
-    DShp = Rose Dir
+DShp, DShp' : Type
+DShp = Rose (Typ, Dir)
+DShp' = (DShp, DShp)
 \end{code}
-\hspace{-0.3cm}\begin{minipage}[b]{0.49\textwidth}
-    \begin{code}
-    mutual
-        data Ins : DShp -> Type where
-            TIns : Ins' xs -> Ins (T xs)
-            VIns : Ins (V In)
-    \end{code}
-    \end{minipage}
-    \begin{minipage}[b]{0.49\textwidth}
-    \begin{code}
-        data Ins' : Vect n DShp -> Type where
-            TIns' : Ins x -> Ins' xs -> Ins' (x :: xs)
-            VIns' : Ins' []
-    \end{code}
+\end{minipage}
+\begin{minipage}[t]{0.32\textwidth}
+\begin{code}
+L, R : (t : Typ) -> DShp
+L t = V (t, Left)
+R t = V (t, Right)
+\end{code}
 \end{minipage}
 
 \iffalse
 \begin{code}
-    mutual
-        data Ins : DShp -> Type where
-            TIns : Ins' xs -> Ins (T xs)
-            VIns : Ins (V In)
-        
-        data Ins' : Vect n DShp -> Type where
-            TIns' : Ins x -> Ins' xs -> Ins' (x :: xs)
-            VIns' : Ins' []
+Show Dir where
+    show Left = "L"
+    show Right = "R"
+
+Eq Dir where
+    Left == Left = True
+    Right == Right = True
+    _ == _ = False
 \end{code}
 \fi
 
-The |mutual| block allows for mutual recursion, because Idris is usually define-before-use. We could have opted to combine both defintions together with a heterogeneous vector like |TIns : {xs : Vect n DShp} -> HVect (map Ins xs) -> Ins (T xs)| but heterogeneous vectors are much harder to reason about than plain vectors, so splitting into two datatypes like this is larger syntactically but significantly simpler to use, and easier for the compiler to automatically provide implementations for. |Outs| is defined analogously for $\omega$. $C$ is defined with the same technique:
+\hspace{-0.4cm}\begin{minipage}[b]{0.46\textwidth}
+\begin{code}
+mutual
+    data Lefts : (x : DShp) -> Type where
+        VLefts : Lefts (L a)
+        TLefts : Lefts' xs -> Lefts (T xs)
+\end{code}
+\end{minipage}
+\vline\hspace{0.05cm}
+\begin{minipage}[b]{0.53\textwidth}
+\begin{code}
+    data Lefts' : Vect n DShp -> Type where
+        VLefts' : Lefts' []
+        TLefts' : Lefts x -> Lefts' xs -> Lefts' (x :: xs)
+\end{code}
+\end{minipage}
+    
+The |mutual| block allows for mutual recursion, because Idris is usually define-before-use. We could have opted to combine both defintions together with a heterogeneous vector like |TLefts : {xs : Vect n DShp} -> HVect (map Lefts xs) -> Lefts (T xs)| but heterogeneous vectors are much harder to reason about than plain vectors, so splitting into two datatypes like this is larger syntactically but significantly simpler to use, and easier for the compiler to automatically provide implementations for. |Rights| is defined analogously for $\rho$. $C$ is defined with the same technique:
 
 \iffalse
 \begin{code}
-    mutual
-        data Outs : DShp -> Type where
-            TOuts : Outs' xs -> Outs (T xs)
-            VOuts : Outs (V Out)
-        
-        data Outs' : Vect n DShp -> Type where
-            TOuts' : Outs x -> Outs' xs -> Outs' (x :: xs)
-            VOuts' : Outs' []
+mutual
+    data Rights : DShp -> Type where
+        VRights : Rights (R a)
+        TRights : Rights' xs -> Rights (T xs)
+    
+    data Rights' : Vect n DShp -> Type where
+        VRights' : Rights' []
+        TRights' : Rights x -> Rights' xs -> Rights' (x :: xs)
 \end{code}
 \fi
 
 \begin{code}
-    mutual
-        data Compl : DShp -> DShp -> Type where
-            TCompl : Compl' xs ys -> Compl (T xs) (T ys)
-            VComplIO : Compl (V In) (V Out)
-            VComplOI : Compl (V Out) (V In)
-        
-        data Compl' : Vect n DShp -> Vect n DShp -> Type where
-            TCompl' : Compl x y -> Compl' xs ys -> Compl' (x :: xs) (y :: ys)
-            VCompl' : Compl' [] []
+mutual
+    data Comp : (x : DShp) -> (y : DShp) -> Type where
+        [search y]
+        VCompLR : Comp (L t) (R t)
+        VCompRL : Comp (R t) (L t)
+        TComp : Comp' xs ys -> Comp (T xs) (T ys)
+    
+    data Comp' : (xs : Vect n DShp) -> (ys : Vect n DShp) -> Type where
+        [search ys]
+        VComp' : Comp' [] []
+        TComp' : Comp x y -> Comp' xs ys -> Comp' (x :: xs) (y :: ys)
 \end{code}
 
+Our implementation of |Ruby| is then
+
+\iffalse
 \begin{code}
-    data RComb : (k : (DShp, DShp) -> Type) -> (DShp, DShp) -> Type where
-        Seq : k (a, b) -> k (b', c) -> Compl b b' => RComb k (a, c)
-        Par : k (a, b) -> k (c, d) -> RComb k (T [a, c], T [b, d])
-        Inv : k (a, b) -> RComb k (b, a)
-    
-    IFunctor RComb where
+namespace Directed
+\end{code}
+\fi
+
+\begin{code}
+    public export
+    data DComb : (k : DShp' -> Type) -> DShp' -> Type where
+        Seq : k (a, b) -> k (b, c) -> DComb k (a, c)
+        Par : k (a, b) -> k (c, d) -> DComb k ([a, c], [b, d])
+        Inv : {a', b' : DShp} -> Comp a a' => Comp b b' => k (a, b) -> DComb k (b', a')
+\end{code}
+
+\iffalse
+\begin{code}
+    public export
+    IFunctor DComb where
         imap f (Seq q r) = Seq (f q) (f r)
         imap f (Par q r) = Par (f q) (f r)
         imap f (Inv q) = Inv (f q)
-    
-    Ruby : Type -> (DShp, DShp) -> Type
-    Ruby a x = IFree RComb (Const a (DShp, DShp)) x
+\end{code}
+\fi
 
-    (<:>) : Ruby t (a, b) -> Ruby t (b', c) -> Compl b b' => Ruby t (a, c)
+We will omit the implementations of |IFunctor DComb| and some of the primitives as they are practically identical to those for |TComb|. Here are the functions that have changed:
+
+\iffalse
+\begin{code}
+    public export
+    (<:>) : IFree DComb k (a, b) -> IFree DComb k (b, c) -> IFree DComb k (a, c)
     (q <:> r) = Do (Seq q r)
     
-    (<|>) : Ruby t (a, b) -> Ruby t (c, d) -> Ruby t (T [a, c], T [b, d])
+    public export
+    (<|>) : IFree DComb k (a, b) -> IFree DComb k (c, d) -> IFree DComb k ([a, c], [b, d])
     (q <|> r) = Do (Par q r)
-    
-    inv : Ruby t (a, b) -> Ruby t (b, a)
-    inv q = Do (Inv q)
+\end{code}
+\fi
 
-    build : t -> {x : (DShp, DShp)} -> Ruby t x
+\begin{code}
+    public export
+    inv : {a', b' : DShp} -> Comp a a' => Comp b b' =>
+        IFree DComb k (a, b) -> IFree DComb k (b', a')
+    inv q = Do (Inv q)
+\end{code}
+\iffalse
+\begin{code}
+namespace Directed'
+\end{code}
+\fi
+\begin{code}
+    DRuby : Type -> DShp' -> Type
+    DRuby a = IFree DComb (Const a DShp')
+
+    build : t -> {x : DShp'} -> DRuby t x
     build v {x} = Ret v
 
-    pi_1 : {u, v, w : DShp} -> Ins v => Compl u w => Ruby String (T [u, v], w)
+    pi_1 : {x, y : DShp} -> Rights y => DRuby String ([x, y], x)
     pi_1 = build "pi1"
 
-    rsh : {a, b, c, x, y, z : DShp} -> (Compl a x, Compl c y, Compl c z) => Ruby String (T [a, T [b, c]], T [T[x, y], z])
+    rsh : {x, y, z : DShp} -> DRuby String ([x, [y, z]], [[x, y], z])
     rsh = build "rsh"
-
-    fork'' : {u, v : DShp} -> Ins u => Compl u v => Ruby String (v, T [v, u])
-    fork'' = build "fork"
-
-    I, O : DShp
-    I = V In
-    O = V Out
-
-    fork2 : Ruby String (T [O, I], T [T [O, O], I])
-    fork2 = inv pi_1 <:> (inv fork'' <|> fork'') <:> rsh
 \end{code}
 
+$fork$ becomes slightly annoying (once again): there are three ways to type it, but we want one function, not three. We combine the three different typing rules for $fork$ into a data structure as follows:
+
+\begin{code}
+data Fork : (x : DShp) -> (y : DShp) -> (z : DShp) -> Type where
+    Fork1 : Rights x -> Fork x x x
+    Fork2 : Comp x y -> Rights x -> Fork y y x
+    Fork3 : Comp x y -> Rights x -> Fork y x y
+\end{code}
+
+The definition of $fork$ is then
+
+\iffalse
+\begin{code}
+namespace Directed'
+\end{code}
+\fi
+
+\begin{code}
+    fork : {x, y, z : DShp} -> Fork x y z => DRuby String (x, [y, z])
+    fork = build "fork"
+\end{code}
+
+There are a number of straightforward properties that need to be established for inference to work; the compiler will often need to have proofs that
+
+\begin{itemize}
+    \item If $\ell(a)$ and $C(a,b)$ then $\rho(b)$.
+    \item If $\rho(a)$ and $C(a,b)$ then $\ell(b)$.
+    \item If $C(a,b)$ then $C(b,a)$.
+\end{itemize}
+
+These can be implemented as functions
+
+\begin{spec}
+compLR : Comp x y -> Lefts x -> Rights y
+compRL : Comp x y -> Rights y -> Lefts x
+compComp : Comp x y -> Comp y x
+\end{spec}
+
+and then tagged with the |%hint| attribute so they are used automatically.
+
+Unfortunately, even with these additions, our implementation of |fork2| does not compile:
+
+\begin{spec}
+    fork2 : {x, y, z, w : DShp} -> Lefts x => Comp x y => Rights z => Comp z w
+        => DRuby String ([x, y], [[y, z], w])
+    fork2 = inv pi_1 <:> (inv fork <|> fork) <:> rsh
+\end{spec}
+
+Idris has a number of limitations that make this type inference fail. Firstly, the above hinted functions cannot be chained together. We can mark an input to be searched for automatically in some cases, however in other cases this will cause a loop in the search algorithm which will cause the entire search to be aborted. For example, if we wrote the symmetry of $C$ as
+
+\begin{spec}
+compComp : Comp x y => Comp y x
+\end{spec}
+
+then the compiler would try to find a |Comp y x| by looking for a |Comp x y|, with the extra permission that it can do a proof search for the |Comp x y|. But we can find a |Comp x y| by looking for a |Comp y x| ... which puts us back where we started, and the search aborts as it's ended up in a loop.
+
+Idris does support the idea of determining arguments - there was a hint in the definition of |Comp| that said the second argument determines the first (by experimentation this was more successful than the other way around). However, this does not help with solving constraints like |Comp [a, ?y] [?x, b]|, which requires not only that either argument determines the other, but also that the determining argument can be different at every level.
+
+Finally, Idris has full dependent types. Dependent type inference is very much undecidable, which means there is not much motivation to implement a sophisticated and powerful type inference algorithm, especially since Idris forces the programmer to give a type signature for every function anyway. By contrast, a language such as Haskell does not have (full) dependent types, and so type inference is decidable in most non-pathological cases, therefore there is more motivation to implement a powerful type inference system. It seems likely that GHC would be able to solve some of these constraints; if not for the lack of proper support for dependent types \cite{LindleyHasochism13} I would have chosen it instead of Idris.
+
+\iffalse
+\begin{code}
+mutual
+    %hint
+    export
+    compLR : Comp x y -> Lefts x -> Rights y
+    compLR VCompLR VLefts = VRights
+    compLR (TComp cs) (TLefts is) = TRights (compLR' cs is)
+
+    compLR' : Comp' xs ys -> Lefts' xs -> Rights' ys
+    compLR' VComp' VLefts' = VRights'
+    compLR' (TComp' a as) (TLefts' b bs) = TRights' (compLR a b) (compLR' as bs)
+
+mutual
+    %hint
+    export
+    compRL : Comp x y -> Rights y -> Lefts x
+    compRL VCompLR VRights = VLefts
+    compRL (TComp cs) (TRights is) = TLefts (compRL' cs is)
+
+    compRL' : Comp' xs ys -> Rights' ys -> Lefts' xs
+    compRL' VComp' VRights' = VLefts'
+    compRL' (TComp' a as) (TRights' b bs) = TLefts' (compRL a b) (compRL' as bs)
+
+mutual
+    %hint
+    export
+    compComp : Comp x y -> Comp y x
+    compComp VCompLR = VCompRL
+    compComp VCompRL = VCompLR
+    compComp (TComp cs) = TComp (compComp' cs)
+
+    compComp' : Comp' xs ys -> Comp' ys xs
+    compComp' VComp' = VComp'
+    compComp' (TComp' a as) = TComp' (compComp a) (compComp' as)
+\end{code}
+\fi
+
+\iffalse
+\begin{code}
+namespace Directed'
+\end{code}
+\fi
+
+For now then, the only solution is to split more complex programs into smaller pieces:
+
+\begin{code}
+    temp : {x, y, z, w : DShp} -> Lefts x => Comp x y => Rights z => Comp z w
+        => DRuby String ([[x, y], w], [[y, z], w])
+    temp = (inv fork <|> fork) <:> rsh
+
+    fork2 : {x, y, z, w : DShp} -> Lefts x => Comp x y => Rights z => Comp z w
+        => DRuby String ([x, y], [[y, z], w])
+    fork2 = inv pi_1 <:> temp
+\end{code}
 
 
 \subsection{Typed Ruby, by loops}
 
 
-
 \section{Making relations functional}
+\label{sec:causal}
 
 We now have a DSL that enforces three important conditions when composing relations:
 
@@ -1261,11 +1407,11 @@ We now have a DSL that enforces three important conditions when composing relati
     \item No feedback loops: Circuits are stable and do not have unbroken feedback loops.
 \end{enumerate}
 
-The first condition is a basic one required for the composition of relations. The second and third are the exact conditions required to ensure that the resulting relation can be represented by a function, i.e. is implementable in hardware. We call such a relation a causal relation. \fxwarning{Causal}
+The first condition is a basic one required for the composition of relations. The second and third are the exact conditions required to ensure that the resulting relation can be represented by a function, i.e. is implementable in hardware. We call such a relation \emph{causal} \cite{HuttonThesis92}.
 
 \subsection{Causal relations and functional interpretations}
 
-A causal relation is a relation whose domain and codomain can be partitioned into two groups, inputs and outputs, such that the outputs can be determined from the inputs. We formalise this as follows:
+A causal relation is a relation whose domain and codomain can be partitioned into two groups, inputs and outputs, such that the outputs can be determined from the inputs. We formalise this as follows \cite{HuttonRelations99}:
 
 Let $Q : A \leftrightarrow B$ be a relation. $Q$ is called \emph{causal} if there exist objects $I_{L}, O_{L}, I_{R}, O_{R}$, isomorphisms \[
     i_{L} : A \cong \left<I_{L},O_{L}\right> \qquad i_{R} : B \cong \left<I_{R},O_{R}\right>
@@ -1288,21 +1434,23 @@ All that is to say, we can rearrange the domain and codomain into ins and outs, 
     f\left<x,y\right> = \left<x,x\right>. && f\left<x,y\right> = \left<y,y\right>
 .\end{align*}
 
+The idea of a causal relation is actually more general than this, and has a purely categorical defintion in terms of categories of relations \cite{HuttonThesis92}.
+
 \begin{figure}[htpb]
     \centering
-    % https://q.uiver.app/?q=WzAsMTIsWzAsMCwiQSJdLFsyLDAsIlxcbGVmdDxJX0EsT19BXFxyaWdodD4iXSxbMiwyLCJJX0EiXSxbMCwyLCJcXGxlZnQ8SV9BLE9fQVxccmlnaHQ+Il0sWzQsMCwiXFxsZWZ0PElfQixPX0JcXHJpZ2h0PiJdLFs2LDAsIkIiXSxbNCwyLCJJX0IiXSxbNiwyLCJcXGxlZnQ8SV9CLE9fQlxccmlnaHQ+Il0sWzMsMiwiXFxsZWZ0PElfQSxJX0JcXHJpZ2h0PiJdLFszLDQsIlxcbGVmdDxPX0EsT19CXFxyaWdodD4iXSxbMCw0LCJPX0EiXSxbNiw0LCJPX0IiXSxbMCwxLCJpX0EiXSxbMSwyLCJcXHBpXzEiXSxbMywwLCJpX0Feey0xfSJdLFs0LDYsIlxccGlfMSIsMl0sWzUsNCwiaV9CIl0sWzcsNSwiaV9CXnstMX0iLDJdLFsyLDgsIlxcdGltZXMiLDFdLFs2LDgsIlxcdGltZXMiLDFdLFs4LDksImYiXSxbOSwxMCwiXFxwaV8xIl0sWzksMTEsIlxccGlfMiIsMl0sWzEwLDMsIlxcdGltZXMiLDFdLFsyLDMsIlxcdGltZXMiLDFdLFs2LDcsIlxcdGltZXMiLDFdLFsxMSw3LCJcXHRpbWVzIiwxXV0=
+    % https://q.uiver.app/?q=WzAsMTIsWzAsMCwiQSJdLFsyLDAsIlxcbGVmdDxJX0wsT19MXFxyaWdodD4iXSxbMiwyLCJJX0wiXSxbMCwyLCJcXGxlZnQ8SV9MLE9fTFxccmlnaHQ+Il0sWzQsMCwiXFxsZWZ0PElfUixPX1JcXHJpZ2h0PiJdLFs2LDAsIkIiXSxbNCwyLCJJX1IiXSxbNiwyLCJcXGxlZnQ8SV9SLE9fUlxccmlnaHQ+Il0sWzMsMiwiXFxsZWZ0PElfTCxJX1JcXHJpZ2h0PiJdLFszLDQsIlxcbGVmdDxPX0wsT19SXFxyaWdodD4iXSxbMCw0LCJPX0wiXSxbNiw0LCJPX1IiXSxbMCwxLCJpX0wiXSxbMSwyLCJcXHBpXzEiXSxbMywwLCJpX0xeey0xfSJdLFs0LDYsIlxccGlfMSIsMl0sWzUsNCwiaV9SIiwyXSxbNyw1LCJpX1Jeey0xfSIsMl0sWzIsOCwiXFx0aW1lcyIsMV0sWzYsOCwiXFx0aW1lcyIsMV0sWzgsOSwiZiJdLFs5LDEwLCJcXHBpXzEiXSxbOSwxMSwiXFxwaV8yIiwyXSxbMTAsMywiXFx0aW1lcyIsMV0sWzIsMywiXFx0aW1lcyIsMV0sWzYsNywiXFx0aW1lcyIsMV0sWzExLDcsIlxcdGltZXMiLDFdXQ==
 \[\begin{tikzcd}
-	A && {\left<I_A,O_A\right>} && {\left<I_B,O_B\right>} && B \\
+	A && {\left<I_L,O_L\right>} && {\left<I_R,O_R\right>} && B \\
 	\\
-	{\left<I_A,O_A\right>} && {I_A} & {\left<I_A,I_B\right>} & {I_B} && {\left<I_B,O_B\right>} \\
+	{\left<I_L,O_L\right>} && {I_L} & {\left<I_L,I_R\right>} & {I_R} && {\left<I_R,O_R\right>} \\
 	\\
-	{O_A} &&& {\left<O_A,O_B\right>} &&& {O_B}
-	\arrow["{i_A}", from=1-1, to=1-3]
+	{O_L} &&& {\left<O_L,O_R\right>} &&& {O_R}
+	\arrow["{i_L}", from=1-1, to=1-3]
 	\arrow["{\pi_1}", from=1-3, to=3-3]
-	\arrow["{i_A^{-1}}", from=3-1, to=1-1]
+	\arrow["{i_L^{-1}}", from=3-1, to=1-1]
 	\arrow["{\pi_1}"', from=1-5, to=3-5]
-	\arrow["{i_B}", from=1-7, to=1-5]
-	\arrow["{i_B^{-1}}"', from=3-7, to=1-7]
+	\arrow["{i_R}"', from=1-7, to=1-5]
+	\arrow["{i_R^{-1}}"', from=3-7, to=1-7]
 	\arrow["\times"{description}, from=3-3, to=3-4]
 	\arrow["\times"{description}, from=3-5, to=3-4]
 	\arrow["f", from=3-4, to=5-4]
@@ -1314,6 +1462,9 @@ All that is to say, we can rearrange the domain and codomain into ins and outs, 
 	\arrow["\times"{description}, from=5-7, to=3-7]
 \end{tikzcd}\]
     \caption{Diagram showing how to rearrange the domain and codomain, apply the functional interpretation and return back to the domain and codomain.}
+    \Description
+        [Diagram showing how to rearrange the domain and codomain, apply the functional interpretation and return back to the domain and codomain.]
+        {Diagram showing how to rearrange the domain and codomain, apply the functional interpretation and return back to the domain and codomain. The diagram looks like a commutative diagram.}
     \label{fig:iso}
 \end{figure}
 
@@ -1367,15 +1518,591 @@ Cleaning up a bit, the composition looks like the diagram below, where \[
         \draw[<-] (10, 2) -- (z);
     \end{tikzpicture}
     \caption{A picture of $(Q\,;R)$.}
+    \Description
+        [A picture of sequential composition in its most general form, with a left wire and right wire each coming from the domain and codomain, and a left wire and right wire interfacing between the two blocks.]
+        {A picture of sequential composition in its most general form. The block Q has input "a" and output "b" on the left, and input "d" and output "c" on the right. The block R has input "w" and output "x" on the left, and input "z" and output "y" on the right. "x" is connected to "d" and "c" is connected to "w" so that the two blocks communicate with each other bidirectionally.}
     \label{fig:functionalSeq}
 \end{figure}
 
 If there is no delay on the feedback path from $c$ back to itself (or equivalently, from $x$ back to itself) then this is likely to spiral off into infinite recursion, and even if it doesn't it's not a valid hardware implementation. However, if we can guarantee that there are delays then the mutual recursion is guaranteed to have a base case and the resulting circuit is well-defined.
 
+Fortunately, it is easy to see that a) such an isomorphism always exists, and b) there is an obvious canonical one that can be automatically constructed.
+
+Unfortunately, this leaves the user with a rather difficult problem: in order to define the interpretation function $f$, they need to satisfy a proof obligation that their function does in fact comply with the shape of the canonical isomorphism. After implementing this system in its entirety, it turned out that this requirement is completely untenable in practice. As an example of the nightmare code that this strategy produces, here is the interpretation of $\pi_{1}$:
+
+\begin{spec}
+pi_1 : {x, y, z: DShp} -> Ins y => Compl x z => Ruby a ([x, y], z)
+pi_1 {x, y} with (make x) proof mkx
+    _ | ((nx, mx) ** _) with (make z) proof mkz
+     _ | ((nz, mz) ** _) with (make y) proof mky
+      _ | ((ny, my) ** _) =
+        let (pfx, pfy, pfz) = (simp mkx, simp mky, simp mkz)
+            pfxy = makepf2 {x=x} {y=y} pfx pfy
+            (Refl, Refl) = complSwap pfx pfz
+            (Refl) = insPf pfy
+        in Ret . Inter $ rewrite plusZeroRightNeutral mx in
+        replace {p=(\v => Vect (nx+ny+v) a -> Vect (mx+snd(fst(make z))) a)}
+            (cong fst pfz) $
+        replace {p=(\v => Vect (nx+ny+mx) a -> Vect (mx+v) a)}
+            (cong snd pfz)
+        (\v => let (p, q) = splitAt (nx + ny) v in let (r, _) = splitAt nx p in
+        rewrite plusCommutative mx nx in r ++ q)
+\end{spec}
+
+Clearly we need an easier way.
+
+
+\subsection{A simpler implementation of causal relations}
+
+Looking back at \cref{fig:functionalSeq}, under the assumption that there are no feedback loops there are three possibilities:
+
+\begin{itemize}
+    \item $w$ is connected to $x$.
+    \item $d$ is connected to $c$.
+    \item Neither of the above.
+\end{itemize}
+
+The feedback loop would occur if both of the first two options held simultaneously, which is disallowed.
+
+The most complex part of the previous section's algorithm is the mutual recursion between the $d=x$ signal and the $c=w$ signal. But since we know that doesn't exist, under the minor assumption that we can generate some ``default value'' for those wires (which is trivially true if modelling them with booleans), we can compute the outputs as follows:
+
+Firstly, suppose that the first of the three options above holds. Generate some default value for $d$. We already have an input value for $a$. Then we can apply the isomorphism and functional intrepretation of $Q$ as described in the previous section to get values for $b$ and $c$. Of course, the output at $b$ may be incorrect, as the input at $d$ was not necessarily correct. However, by assumption, $c$ does not depend on $d$, so the output at $c$ will be correct. Since $c=w$, we now have both inputs for $R$, and both of these are correct. Run $R$ to get the correct value of $x$, and since $x=d$ we now have the correct value of $d$. Run $Q$ again but this time on the correct value of $d$ to get the correct value of $c$.
+
+In short, if $w$ depends on $x$ then we can generate a dummy value for $d$ and run $Q$, $R$ and $Q$ again in that order to get all the correct outputs.
+
+If the second case holds then generate a dummy value for $w$ and run $R$, $Q$, $R$ to get the correct values.
+
+If the third case holds, both of the above will work.
+
+Therefore it follows that in all three cases, we can
+\begin{enumerate}
+    \item Generate a dummy value for $d$.
+    \item Run $Q$ on $a$ and $d$ to get $c$.
+    \item Run $R$ on $z$ and that $c$ to get a new $d$.
+    \item Run $Q$ on $a$ and the new $d$ to get a new $c$ and a $b$.
+    \item Run $R$ on $z$ and the new $c$ to get a $y$.
+    \item The output is $b$ and $y$ as obtained in the previous two steps.
+\end{enumerate}
+
+But what does it mean to ``run $Q$''? Can we simplify what this means to avoid the isomorphism entirely? The answer is yes, if we design our data structures properly. Rather than splitting our types into two parts, one for inputs and one for outputs, we can use a |DShp| as a parameter to construct a data structure that either contains only the leaves marked as |Left| or only the ones marked as |Right|:
+
+\begin{code}
+data Data : Dir -> DShp -> Type where
+    LL : type a -> Data Left (L a)
+    RR : type a -> Data Right (R a)
+    LR : Data Left (R a)
+    RL : Data Right (L a)
+    Nil : Data d []
+    (::) : Data d x -> Data d (T xs) -> Data d (T (x :: xs))
+\end{code}
+
+Therefore a |Data Left d| can only contain values at the leaves marked |Left|, and likewise for |Right|. Remember that |type : Typ -> Type| converts from our universe of types to native Idris types. |Typ| represents not only the usable types within our |Ruby| programs, but it also implements a function |rep| that gives our much-needed default values. Together with |gen|, we can generate |Data| for any valid |DShp|:
+
+\begin{code}
+rep : (t : Typ) -> type t
+
+gen : {x : DShp} -> {d : Dir} -> Data d x
+\end{code}
+
+Unlike with |Rose|, we directly use |Nil| and |(::)| as constructors so we can pattern match with list notation. The reason why we could not do this with |Rose| also is because of the |(::)| constructor of |Data|: it requires a single element |Data d x| and a list |Data d (T xs)|. If we remove the |T| constructor and just have |Nil| and |(::)| then we can't write |Data d (T xs)|, which means we can't enforce that the second argument isn't a leaf.
+
+An interpretation is then a function from the |Rights| on the domain and |Lefts| on the codomain, to the |Lefts| on the domain and the |Rights| on the codomain:
+
+\begin{code}
+data Interp : DShp' -> Type where
+    Inter : {x, y : DShp}
+         -> ((Data Right x, Data Left y) -> (Data Left x, Data Right y))
+         -> Interp (x, y)
+\end{code}
+
+Writing a handler that compiles a |Ruby| program into an |Interp| is now child's play: given a couple of helper functions
+
+\begin{spec}
+swp : Dir -> Dir
+swp Left = Right
+swp Right = Left
+
+swap : {d : Dir} -> Comp z w => Data d z -> Data (swp d) w
+\end{spec}
+
+the simulator handler is given by
+
+\iffalse
+\begin{code}
+swp : Dir -> Dir
+swp Left = Right
+swp Right = Left
+
+empty : {d : Dir} -> (if d == Left then Rights x else Lefts x) => Data d x
+empty {d=Right} = emptyL where
+    emptyL : Lefts y => Data Right y
+    emptyL @{VLefts} = RL
+    emptyL @{TLefts VLefts'} = []
+    emptyL @{TLefts (TLefts' t ts)} with (emptyL @{t})
+        _ | v with (emptyL @{TLefts ts})
+            _ | vs = v :: vs
+empty {d=Left} = emptyR where
+    emptyR : Rights y => Data Left y
+    emptyR @{VRights} = LR
+    emptyR @{TRights VRights'} = []
+    emptyR @{TRights (TRights' t ts)} with (emptyR @{t})
+        _ | v with (emptyR @{TRights ts})
+            _ | vs = v :: vs
+
+swap : {d : Dir} -> Comp z w => Data d z -> Data (swp d) w
+swap {d=Left} p = swapL p where
+    swapL : Comp x y => Data Left x -> Data Right y
+    swapL @{VCompLR} (LL x) = RR x
+    swapL @{VCompRL} LR = RL
+    swapL @{TComp VComp'} _ = []
+    swapL @{TComp (TComp' t ts)} (x :: xs) with (swapL @{t} x)
+        _ | v with (swapL @{TComp ts} xs)
+            _ | vs = v :: vs
+swap {d=Right} p = swapR p where
+    swapR : Comp x y => Data Right x -> Data Left y
+    swapR @{VCompRL} (RR x) = LL x
+    swapR @{VCompLR} RL = LR
+    swapR @{TComp VComp'} _ = []
+    swapR @{TComp (TComp' t ts)} (x :: xs) with (swapR @{t} x)
+        _ | v with (swapR @{TComp ts} xs)
+            _ | vs = v :: vs
+
+copy : {d : Dir} -> Comp x y => Data d x
+    -> (if d == Left then Lefts x else Rights x)
+    => Data (swp d) y
+copy {d} p = swap {d=d} p
+\end{code}
+\fi
+
+\iffalse
+\begin{code}
+namespace Simulate
+\end{code}
+\fi
+
+\begin{code}
+    gen : Interp x -> Interp x
+    gen = id
+
+    algSeq : Interp (a, b) -> Interp (b, c) -> Interp (a, c)
+    algSeq (Inter {y=b} f) (Inter g) = Inter $ \(x, y) =>
+        let     (_, b1)     = f (x, gen)
+                (b2, _)     = g (b1, y)
+                (a, b3)     = f (x, b2) 
+                (b4, c)     = g (b3, y) in (a, c)
+
+    algPar : Interp (a, b) -> Interp (c, d) -> Interp ([a, c], [b, d])
+    algPar (Inter f) (Inter g) = Inter $ \([x, y], [u, v]) =>
+        let     (x', u')    = f (x, u)
+                (y', v')    = g (y, v) in ([x', y'], [u', v'])
+
+    algInv : {a', b' : DShp} -> Comp a a' => Comp b b' => Interp (a, b) -> Interp (b', a')
+    algInv (Inter f) = Inter $ \(y, x) => let (x', y') = f (swap x, swap y) in (swap y', swap x')
+
+    alg : DComb Interp x -> Interp x
+    alg (Seq q r) = algSeq q r
+    alg (Par q r) = algPar q r
+    alg (Inv q) = algInv q
+
+    public export
+    RInterp : DShp' -> Type
+    RInterp = IFree DComb Interp
+
+    simulate : RInterp x -> Interp x
+    simulate = ifold gen alg
+\end{code}
+
+where |ifold| is the equivalent of |fold| for |IFree|. Note in particular that the implementation of |algSeq| is precisely the procedure described earlier, where |gen| is used to generate the initial default value for $d$.
+
+There are two key factors in this program: firstly, |simulate| takes a program written in a DSL, and returns a native, first-class Idris function. This is not a symbolic simulation - we have, from within Idris, compiled a program into an Idris function.
+
+The second thing is that this is a function, not a relation. Because we have guaranteed that each primitive is causal, and our DSL guarantees by construction that composition preserves causality, our resulting program is provably causal, and we get out a function at the other end. This also guarantees that the program is implementable in hardware.
+
+We saw earlier how horrific it was to implement |pi_1| in the previous system; does this method fare any better? Judge for yourself:
+
+\iffalse
+\begin{code}
+namespace Directed
+\end{code}
+\fi
+
+\begin{code}
+    pi_1 : {x, y : DShp} -> Rights y => RInterp ([x, y], x)
+    pi_1 = Ret . Inter $ \([a, b], c) => ([c, empty], a)
+\end{code}
+
+The implementation is a one-liner, with |empty| simply being a utility function much like swap. For completeness' sake, here are the definitions for |rsh| and |fork| also, again using another small utility function |copy|:
+
+\begin{code}
+    rsh : {x, y, z : DShp} -> RInterp ([x, [y, z]], [[x, y], z])
+    rsh = Ret . Inter $ \([a, [b, c]], [[d, e], f]) => ([d, [e, f]], [[a, b], c])
+
+    fork : {x, y, z : DShp} -> Fork x y z => RInterp (x, [y, z])
+    fork @{pf} = Ret . Inter $ \(a, [b, c]) => case pf of
+        Fork1 _     => (empty, [a, a])
+        Fork2 _ _   => (b, [empty, copy b])
+        Fork3 _ _   => (c, [copy c, empty])
+\end{code}
+
+
+\section{Non-standard interpretation}
+\label{sec:nsi}
+
+We have already shown how to write a handler that interprets a Ruby program into an Idris function. In this final section, we will show many more examples of handlers to transform Ruby programs into other forms.
+
+
+\subsection{Type inference}
+
+We currently have three Ruby DSLs:
+
+\begin{enumerate}
+    \item Untyped.
+    \item Typed with tuple shapes and data types (typed).
+    \item Typed with tuple shapes, data types and directions (directed).
+\end{enumerate}
+
+Untyped is a little too relaxed so isn't that useful. Typed encapsulates well-typed relational programs, and directed encapsulates well-typed functional programs. It would therefore be useful to be able to convert typed to directed, if possible. The process for this type inference will be as follows:
+
+\begin{enumerate}
+    \item Collect up all the types and constraints of the program.
+    \item Solve the system of constraints (if possible).
+    \item Use the solution to upgrade the program from the old DSL to the new one.
+\end{enumerate}
+
+Unsurprisingly, we will be utilising algebraic effects for two of these steps.
+
+
+\subsubsection{State, Reader and Error effects}
+
+During the type inference we will need to traverse the syntax tree of our Ruby program, generating variables and storing them and their associated constraints somewhere. Along the way, a malformed program (or an error in the inference algorithm) could cause the program to fail. Therefore we will be making use of the |State|, |Reader| and |Error| effects.
+
+The |State| effect will exactly mimic the |State| monad - it represents a storage box that can be read from and written to. It has two operations, |Get| and |Put|, where |Get| gets the current value stored and |Put| overwrites the stored value with a new value. We therefore define |State| as an effect paramaterised by the type of the internal state:
+
+\hspace{-0.3cm}\begin{minipage}[t]{0.45\textwidth}
+\begin{code}
+data State s k
+    = Get (s -> k)
+    | Put s k
+\end{code}
+\end{minipage}
+\begin{minipage}[t]{0.4\textwidth}
+\begin{code}
+Functor (State s) where
+    map f (Get g) = Get (f . g)
+    map f (Put s k) = Put s (f k)
+\end{code}
+\end{minipage}
+
+%format -< = "\subseteq"
+
+In the introduction to algebraic effects, we used |Inl| and |Inr| to work with coproducts. However, there is a more general way of working with arbitrary coproducts: we can define an interface |-<| where |f -< g| witnesses the fact that |g| is a coproduct that contains |f| somewhere inside it. This interface comes with a function |ins| that lifts |f| into |g|, automatically applying |Inl| and |Inr| in the correct places \cite{SwierstraDTC08}.
+
+\begin{code}
+infixr 1 -<
+
+interface (Functor f, Functor g) => (-<) f g where
+    inj : f a -> g a
+
+    ins : f (Free g a) -> Free g a
+    ins = Op . inj
+
+Functor f => (-<) f f where
+    inj = id
+
+(Functor f, Functor g) => (-<) f (f :+: g) where
+    inj = Inl
+
+(Functor f, Functor g, Functor h, f -< h) => (-<) f (g :+: h) where
+    inj = Inr . inj
+\end{code}
+
+This assumes that we only ever nest functor coproduct to the right, i.e. |(f :+: g) :+: h| is disallowed. Now that we have this, we can define fully general smart constructors for |Get| and |Put| as follows:
+
+\begin{code}
+get : (State s) -< f => Free f s
+get = ins (Get pure)
+
+put : (State s) -< f => s -> Free f ()
+put s = ins (Put s (pure ()))
+\end{code}
+
+Once we handle a |Free (State s) a| we want to give it a starting value for |s| and have it return an |a| as result. Therefore our output type is |s -> a|. There is only one way to write the generator:
+
+%format gen_state
+%format alg_state
+%format handle_state
+
+\begin{code}
+gen_state : a -> (s -> a)
+gen_state a = \_ => a
+\end{code}
+
+For the algebra, in the |Get| case we continue with the value we've got from the store. In the |Put| case we ignore the value from the store and proceed with the value we've been given:
+
+\begin{code}
+alg_state : (State s) (s -> a) -> (s -> a)
+alg_state (Get k) = \s => k s s
+alg_state (Put s k) = \_ => k s
+\end{code}
+
+The handler is then the fold over these two:
+
+\begin{code}
+handle_state : Free (State s) a -> (s -> a)
+handle_state = fold gen_state alg_state
+\end{code}
+
+The implementation for |Reader| is identical except |Get| is replaced by |Read| and there is no |Put|, i.e. it is a read-only state. |Error| is even more straightforward:
+
+\iffalse
+\begin{code}
+data Reader r k = Read (r -> k)
+
+Functor (Reader r) where
+    map f (Read k) = Read (f . k)
+
+read : (Reader r) -< f => Free f r
+read = ins (Read pure)
+
+gen_reader : a -> (r -> a)
+gen_reader = const
+
+alg_reader : (Reader r) (r -> a) -> (r -> a)
+alg_reader (Read k) = \r => k r r
+
+handle_reader : Free (Reader r) a -> (r -> a)
+handle_reader = fold gen_reader alg_reader
+\end{code}
+\fi
+
+%format gen_error
+%format alg_error
+%format handle_error
+
+\hspace{-0.3cm}\begin{minipage}[t]{0.45\textwidth}
+\begin{code}
+data Error e k = Throw e
+
+Functor (Error e) where
+    map _ (Throw x) = Throw x
+
+throw : (Error e) -< f => e -> Free f b
+throw x = ins (Throw x)
+\end{code}
+\end{minipage}
+\vline\hspace{0.3cm}
+\begin{minipage}[t]{0.4\textwidth}
+\begin{code}
+gen_error : a -> Either e a
+gen_error = Right
+
+alg_error : (Error e) (Either e a) -> Either e a
+alg_error (Throw x) = Left x
+
+handle_error : Free (Error e) a -> Either e a
+handle_error = fold gen_error alg_error
+\end{code}
+\end{minipage}
+
+
+\subsubsection{The algorithm in detail}
+
+The type inference algorithm traverses the typed program, doing roughly as follows at each step:
+
+\definecolor{dgray}{rgb}{0.2, 0.2, 0.2}
+\definecolor{lgray}{rgb}{0.8, 0.8, 0.8}
+\newcommand{\dgr}[1]{{\textcolor{dgray}{\textbf{#1}}}}
+\newcommand{\lgr}[1]{{\textcolor{lgray}{\textbf{#1}}}}
+
+\begin{enumerate}
+    \item \lgr{S}\lgr{E} Get the types of the current term.
+    \item \dgr{S}\lgr{E} Generate type variables from the types and store them.
+    \item \lgr{S}\lgr{E} Get the constraints of the current term.
+    \item \dgr{S}\dgr{E} Generate and store those constraints based on the type variables.
+    \item \lgr{S}\lgr{E} Return a program that does the following:
+    \begin{enumerate}
+        \item \dgr{R}\dgr{E} Look up the type variables in the result store.
+        \item \lgr{R}\dgr{E} Check that the resulting types satisfy all the constraints.
+        \item \lgr{R}\lgr{E} Return the directed term.
+    \end{enumerate}
+\end{enumerate}
+
+Beside each type, a dark ``S'' indicases that the |State| effect is being used, and likewise for |Reader| and |Error|. For example, when generating new type variables, the store needs to be read to know which names have already been taken, and then the new variables need to be written. Likewise, when the result types are checked against the constraints, an error may be thrown. (It is at this stage that decidable equality of |Typ| is required, which is the original reason why we constructed our own universe of types rather than simply use |Type|). The SAT solver is run between stages (5) and (a).
+
+It would be a waste of space to regurgitate the entire program here; instead we will look at some example functions that showcase the use of algebraic effects. Firstly some preliminary types:
+
+\iffalse
+\begin{code}
+Con : Type -> Type
+Con = id
+\end{code}
+\fi
+
+\begin{code}
+ST, ET : Type
+ST = (List Typ, List (Con Nat))
+ET = Unit
+
+Typer1, Typer2 : Type -> Type
+Typer1 = Free (State ST :+: Error ET)
+Typer2 = Free (Reader (List (Typ, Dir)) :+: Error ET)
+\end{code}
+
+|Con| is a datatype that holds information about the various constraints (|Lefts|, |Comp| and so on). Let's examine a couple of the stages from the algorithm outlined above. This function is called during stage (4), putting the constraints into the store:
+
+\begin{code}
+putCon : State ST -< f => Con Nat -> Free f Unit
+putCon y @{p} = do
+    (xs, ys) <- get @{p}
+    put @{p} (xs, y :: ys)
+\end{code}
+
+Unfortunately, as already explained Idris' type inference is not the best - without explicitly using |xs| and |ys| it can't infer the type of |get| or |put| (it knows the effect is |State s| but can't deduce |s|) so we need to give it the exact type by passing the constraint |State ST -< f| explicitly.
+
+This function is used in step (a), using both |read| from |Reader| and |throw| from |Error|:
+
+\begin{code}
+getShp : Rose Nat -> Typer2 DShp
+getShp x = do
+    ds <- read
+    traverse (f ds) x where
+    f : List (Typ, Dir) -> Nat -> Typer2 (Typ, Dir)
+    f ds n = do
+        case inBounds n ds of
+            Yes p => pure $ index n ds
+            No _ => throw ()
+\end{code}
+
+Even though both effects are completely orthogonal, they can be combined with literally zero effort thanks to the coproduct functor and the |-<| typeclass.
+
+
+\subsubsection{Metaprogramming}
+
+In order to know the current type, target type and necessary constraints, these pieces of data must live somewhere - preferably inside a data structure. Let us take as an example the directed version of |pi_1|:
+
+\begin{spec}
+pi_1 : {x, y : DShp} -> Rights y => RInterp ([x, y], x)
+\end{spec}
+
+In order to go from a typed |pi_1| to a directed |pi_1|, the previous algorithm needs to know that it:
+
+\begin{itemize}
+    \item Takes two implicits, |x| and |y|.
+    \item Has one constraint, |Rights y|.
+    \item Has result type |([x, y], x)|.
+\end{itemize}
+
+In fact, many more pieces of data are needed - for example, the inference algorithm at one point requires a function that deconstructs the result type back into its constituent parts, something like
+
+\begin{spec}
+break : DShp' -> Vect 2 DShp
+break (T [x, y], _) = [x, y]
+break _ = Fail
+\end{spec}
+
+In the end, the required data structure containing all this data is rather large, and consists entirely of information that can be derived directly from the signature of |pi_1|.
+
+Luckily, Idris supports metaprogramming via a system known as \emph{elaborator reflection} \cite{ChristiansenElabReflection16}. Using this, we were able to write an elaborator script (i.e. a metaprogram) that takes as input the name of a function and, assuming it is the signature for a Ruby primitive, automatically generate the required data structure needed to upgrade from the typed DSL to the directed one, which is invoked as follows:
+
+%format ` = "\ ''"
+
+\begin{spec}
+%runElab makeBlock `{pi_1}
+\end{spec}
+
+
+\subsection{Compiling to RBS}
+
+[The code for this section is 99\% complete, I just need to clean it up and actually write this up properly.]
+
+RBS is the input format used by the Rebecca simulator, a small hardware simulator written in Lazy ML. The format is a list of blocks with each wire of the domain and codomain numbered. Wires with the same number are connected together.
+
+Given a few helper fuctions (|label|, |relabel| and |construct|) and a type |RBS| to represent the lists of blocks and their types, the full interpretation is rather simple to construct. Firstly the generator gets the type and name of the block and constructs an |RBS| for it:
+
+%Doesn't work :(
+%format "b.type" = "\Varid{b}\Varid{type}"
+
+\begin{spec}
+gen : TBlock x -> Free (State Nat) RBS
+gen b = do
+    p <- label (fst b.type)
+    q <- label (snd b.type)
+    pure ((p, q), [(b.name, (p, q))])
+\end{spec}
+
+Then the algebra combines and/or rearranges the subterms of each constructor, renaming signals when two types are supposed to match up:
+
+\begin{spec}
+alg : TComb (Const (Free (State Nat) RBS) TShp') x -> Free (State Nat) RBS
+alg (Seq q r) = do
+    ((q1, q2), qs) <- q
+    ((r1, r2), rs) <- r
+    let f = construct r1 q2 id
+    pure ((map f q1, map f r2), relabel f (qs ++ rs))
+alg (Par q r) = do
+    ((q1, q2), qs) <- q
+    ((r1, r2), rs) <- r
+    pure (([q1, r1], [q2, r2]), qs ++ rs)
+alg (Inv q) = do
+    ((q1, q2), qs) <- q
+    pure ((q2, q1), qs)
+\end{spec}
+
+A simple custom |Show| instance for |RBS| yields the following output for an instance of the program |pi_1 <:> pi_1|:
+
+\noindent
+\begin{alltt}
+Name      Domain                        Range
+----------------------------------------------------------------------
+pi1       <<.0, .1>, .2>                <.3, .4>
+pi1       <.3, .4>                      .7
+----------------------------------------------------------------------
+Directions - <<out, in>, in> ~ in
+Wiring     - <<.0, .1>, .2> ~ .7
+\end{alltt}
+
+Since this algorithm works on typed Ruby, not directed Ruby, the directions for the signals need to be provided separately. However, if the program is a valid causal program, this can be automated by running the type inference algorithm in the previous section to get a valid assignment of directions.
+
+\subsection{Generating circuit diagrams}
+
+[The code for this is also done, I just need to port it from Haskell and to my new system.]
+
+
+\subsection{Compiling to Verilog}
+
+[I think this would be a good idea, but I haven't started it yet.]
+
+
+\subsection{Source-to-source transformations}
+
+[I did this in my Master's project so it shouldn't be difficult to port it over.]
+
+
+\section{Conclusion \& Future Work}
+\label{sec:end}
+
+Ruby is a minimal yet expressive language for describing hardware at a very high level. By implementing it as a sequence of DSLs within a functional language, we were able to very easily define the syntax and provide the semantics without writing all the necessary compiler infrastructure ourselves. Dependent typing makes it easy to embed program semantics, such as types, into the syntax; by expressing these types as Idris types, we allowed the host compiler to be our type checker and type inference engine, for the most part.
+
+While algebraic effects were by no means necessary, using them gave us a common and easily implemented recursion scheme over all the different DSLs. We showed how non-standard interpretations are given as handlers; once the language and typing rules were defined, writing these interpretations was straightforward. Interpretations to Idris functions, RBS, and circuit diagrams were all written fairly quickly and easily. The running example of longest path estimation showed how to use handlers to extract valuable low-level properties from a high-level design, while at a higher level we have shown how handlers can be used to perform source-to-source transformation.
+
+The translation from typed to directed Ruby illustrated how easy metaprogramming is when using algebraic effects: the type inference algorithm uses a typed Ruby program to generate a stateful error-throwing program, which generates a read-only-stateful error-throwing program, which generates a directed Ruby program, which generates an Idris function. The ability to compose effects with zero extra effort made writing the algorithm relatively smooth in comparison to using an alternative such as monad transformers, and we expect that this approach of chaining program generators together has many more uses to be discovered.
+
+Unfortunately, not everything proceeded smoothly. The very non-standard typing rules for Ruby meant that directed programs had to be broken into smaller chunks lest the compiler fail to satisfy all the necessary constraints. This had the knock-on effect that when upgrading from typed Ruby to directed Ruby, run-time polymorphism is lost. Writing functional interpretations for causal relations is also slightly clunkier than in the original Lazy ML version. While Idris did offer a plethora of features to make our lives easier - full dependent types, determining arguments for data structures, automatic proof search, proof hints, elaborator reflection - this was not enough to be able to write directed Ruby as easily as we would have liked. Still, this project is, as far as we know, the first implementation of Ruby that supports correct-by-construction programming and the notion of causal programs, allowing for suitable programs to be simulated functionally rather than relationally.
+
+Here are some further avenues of research that seem promising and interesting:
+\begin{itemize}
+    \item Use algebraic effects to combine relational, functional, declarative and imperative languages together, so that the programmer can get the benefit of using whichever paradigm is best suited for the current task.
+    \item Explore how to use algebraic effects to chain program-generating programs together. In particular, explore how this could be used to write programs that generate compilers or optimisation engines, for example for design space exploration.
+    \item Embed hardware DSLs inside existing synthesis tools, for example a DSL for designing state machines that can be used in the middle of SystemVerilog or VHDL code.
+    \item Investigate the spectrum between non-verified code (such as the Lazy ML Ruby compiler) and fully verified code (such as \emph{Coby}, a Coq library for Ruby verification \cite{WangCoby21}), and see where on that spectrum are the most useful tools for practical hardware design.
+    \item Explore DSLs for hardware-software co-design, allowing one to simultaneously program CPU, GPU and FPGA - Aronsson and Sheeran's work in \cite{AronssonHardware17} uses a system remarkably close to algebraic effects.
+\end{itemize}
+
+
 %%
 %% Acknowledgements
 \begin{acks}
-    \fxwarning{Acknowledgements}
+
 \end{acks}
 
 %%

@@ -144,3 +144,44 @@ oppTEImposs VOppLR impossible
 export
 decOpp : (x : DShp) -> (y : DShp) -> Dec (Opp x y)
 decOpp = decide @{DecOpp}
+
+[DecFork] Decidable 3 [DShp, DShp, DShp] Fork where
+    decide x y z with (assert_total $ decEq x y)
+        _ | Yes p with (assert_total $ decEq y z)
+            _ | Yes q with (decRight z)
+                _ | Yes r = Yes $ rewrite p in rewrite q in Fork1 r
+                _ | No  r = No $ \f => case f of
+                    Fork1 u => r u
+                    Fork2 u v => r v
+                    Fork3 u v => r (rewrite p in v)
+            _ | No q with (decOpp z y)
+                _ | Yes r with (decRight z)
+                    _ | Yes s = Yes $ rewrite p in Fork2 r s
+                    _ | No  s = No $ \f => case f of
+                        Fork1 u => q p
+                        Fork2 u v => s v
+                        Fork3 u v => q (sym p)
+                _ | No r = No $ \f => case f of
+                    Fork1 u => q Refl
+                    Fork2 u v => r u
+                    Fork3 u v => r (oppOpp u)
+        _ | No p with (assert_total $ decEq x z)
+            _ | Yes q with (decOpp y z)
+                _ | Yes r with (decRight y)
+                    _ | Yes s = Yes $ rewrite q in Fork3 r s
+                    _ | No  s = No $ \f => case f of
+                        Fork1 u => p Refl
+                        Fork2 u v => p Refl
+                        Fork3 u v => s v
+                _ | No r = No $ \f => case f of
+                    Fork1 u => p Refl
+                    Fork2 u v => p Refl
+                    Fork3 u v => r u
+            _ | No q = No $ \f => case f of
+                Fork1 u => p Refl
+                Fork2 u v => p Refl
+                Fork3 u v => q Refl
+
+export
+decFork : (x : DShp) -> (y : DShp) -> (z : DShp) -> Dec (Fork x y z)
+decFork = decide @{DecFork}
