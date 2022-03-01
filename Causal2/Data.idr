@@ -10,9 +10,15 @@ data Rose : Type -> Type where
     T : Vect n (Rose a) -> Rose a
 
 public export
+concatWith : Show a => String -> List a -> String
+concatWith _ [] = ""
+concatWith _ [x] = show x
+concatWith s (x :: xs) = show x ++ s ++ concatWith s xs
+
+public export
 Show a => Show (Rose a) where
-    show (V x) = show x
-    show (T rs) = show rs
+    show (V x) = "." ++ show x
+    show (T xs) = "<" ++ concatWith ", " (toList xs) ++ ">"
 
 public export
 Functor Rose where
@@ -191,3 +197,9 @@ mutual
         [search ys]
         VOpp' : Opp' [] []
         TOpp' : Opp x y -> Opp' xs ys -> Opp' (x :: xs) (y :: ys)
+
+public export
+data Fork : (x : DShp) -> (y : DShp) -> (z : DShp) -> Type where
+    Fork1 : Rights x -> Fork x x x
+    Fork2 : Opp x y -> Rights x -> Fork y y x
+    Fork3 : Opp x y -> Rights x -> Fork y x y

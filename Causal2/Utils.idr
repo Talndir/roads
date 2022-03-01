@@ -95,3 +95,17 @@ copy : {d : Dir} -> Opp x y => Data d x
     -> (if d == Left then Lefts x else Rights x)
     => Data (swp d) y
 copy {d} p = swap {d=d} p
+
+mutual
+    export
+    compl : (x : DShp) -> (y : DShp ** Opp x y)
+    compl (V (t, Left)) = (V (t, Right) ** VOppLR)
+    compl (V (t, Right)) = (V (t, Left) ** VOppRL)
+    compl (T xs) = let (ys ** p) = compl' xs in (T ys ** TOpp p)
+
+    compl' : (xs : Vect n DShp) -> (ys : Vect n DShp ** Opp' xs ys)
+    compl' [] = ([] ** VOpp')
+    compl' (x :: xs) =
+        let (y ** p) = compl x
+            (ys ** ps) = compl' xs in ((y :: ys) ** TOpp' p ps)
+    

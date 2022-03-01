@@ -16,6 +16,7 @@ data Con : Type -> Type where
     (<<) : a -> Con a
     (>>) : a -> Con a
     (~~) : a -> a -> Con a
+    Fk : a -> a -> a -> Con a
 
 public export
 ConMap : Con DShp -> Type
@@ -23,6 +24,7 @@ ConMap (x -= y) = x = y
 ConMap (<< x) = Lefts x
 ConMap (>> x) = Rights x
 ConMap (x ~~ y) = Opp x y
+ConMap (Fk x y z) = Fork x y z
 
 public export
 data HCon : Vect n (Con DShp) -> Type where
@@ -49,6 +51,9 @@ try1 (>> x) with (decRight x)
     _ | Yes p = Just p
     _ | No p = Nothing
 try1 (x ~~ y) with (decOpp x y)
+    _ | Yes p = Just p
+    _ | No p = Nothing
+try1 (Fk x y z) with (decFork x y z)
     _ | Yes p = Just p
     _ | No p = Nothing
 

@@ -5,6 +5,7 @@ import Effects.Algebraic
 import Effects.State
 import Causal2.Elab
 import Causal2.Typing
+import Causal2.Utils
 
 %language ElabReflection
 
@@ -68,15 +69,16 @@ makeNames : TRuby x -> RBS
 makeNames x = handle_state (fold' gen alg x) 0
 
 outl : {x, y : DShp} -> Rights y => DBlock ([x, y], x)
-
 %runElab makeBlock `{outl}
 
 rsh : {x, y, z : DShp} -> DBlock ([x, [y, z]], [[x, y], z])
-
 %runElab makeBlock `{rsh}
 
-test2 : TRuby (T [T [V TInt, V TBool], V TInt], V TInt)
-test2 = Ret outl <:> Ret outl
+fork : {x, y, z : DShp} -> Fork x y z => DBlock (x, [y, z])
+%runElab makeBlock `{fork}
+
+test : {x, y : TShp} -> TRuby ([x, x], [[x, y], y])
+test = inv (Ret outl) <:> (inv (Ret fork) <|> (Ret fork)) <:> (Ret rsh)
 
 [showDShp] Show DShp where
     show (V (_, Left)) = "in"
